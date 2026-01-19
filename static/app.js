@@ -24,6 +24,8 @@ createApp({
         const showPwaHelp = ref(false);
         const pwaHelpMessage = ref('');
         const autoEnter = ref(true);
+        // Initialize mute state from localStorage (assume muted by default for safety)
+        const isMuted = ref(localStorage.getItem('tvMuted') === 'true');
 
         let statusCheckInterval = null;
 
@@ -87,6 +89,56 @@ createApp({
             if (!connectionStatus.value) {
                 showError('Not connected to TV');
                 return;
+            }
+
+            // Track mute state
+            if (keyCode === 'KEYCODE_VOLUME_MUTE') {
+                isMuted.value = !isMuted.value;
+                localStorage.setItem('tvMuted', isMuted.value.toString());
+                console.log('Mute state:', isMuted.value);
+            }
+
+            // Special handling for HOME button to prevent unmute side-effect
+            if (keyCode === 'KEYCODE_HOME') {
+                const wasMuted = isMuted.value;
+                console.log('Sending HOME' + (wasMuted ? ' with mute restoration' : ''));
+                try {
+                    // Send HOME
+                    const homeResponse = await fetch('api/send_key', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ key: 'KEYCODE_HOME' })
+                    });
+
+                    if (!homeResponse.ok) {
+                        const data = await homeResponse.json();
+                        showError(data.error || 'Failed to send key');
+                        return;
+                    }
+
+                    // Always restore mute if it was muted
+                    if (wasMuted) {
+                        // Wait a bit for home to process
+                        await new Promise(resolve => setTimeout(resolve, 400));
+
+                        // Restore mute state
+                        await fetch('api/send_key', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ key: 'KEYCODE_VOLUME_MUTE' })
+                        });
+                        console.log('Mute restored after HOME');
+                    }
+
+                    if (navigator.vibrate) {
+                        navigator.vibrate(50);
+                    }
+                    return;
+                } catch (error) {
+                    console.error('Error sending key:', error);
+                    showError('Failed to send key');
+                    return;
+                }
             }
 
             console.log('Sending key:', keyCode);
