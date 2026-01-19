@@ -5,21 +5,147 @@ Uses simple HTTP requests instead of WebSockets.
 """
 import asyncio
 import logging
+import ssl  # Added ssl import here
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Callable
 import yaml
 from aiohttp import web
 from androidtvremote2 import AndroidTVRemote, ConnectionClosed, CannotConnect, InvalidAuth
+from androidtvremote2.remote import RemoteProtocol, RemoteMessage, Feature
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Global state
-tv_remote: Optional[AndroidTVRemote] = None
+tv_remote: Optional['CustomAndroidTVRemote'] = None
 config = {}
 pairing_code_future: Optional[asyncio.Future] = None
 pairing_in_progress = False
 connecting = False
+
+# Event queue for long-polling
+server_events = []
+server_event_futures: List[asyncio.Future] = []
+
+
+def broadcast_event(event_type, data=None):
+    """Broadcast an event to all waiting clients"""
+    global server_event_futures
+    event = {"type": event_type, "data": data}
+
+    # Notify all waiting futures
+    for future in server_event_futures:
+        if not future.done():
+            future.set_result(event)
+
+    # Clear the list as they are single-use
+    server_event_futures = []
+
+
+class CustomRemoteProtocol(RemoteProtocol):
+    """Custom protocol to intercept IME events"""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._on_ime_show_updated: Callable[[bool], None] = lambda x: None
+
+
+    def _handle_message(self, raw_msg: bytes) -> None:
+        """Handle a message from the server."""
+        # Parse the message first to check for ime_show_request
+        try:
+            msg = RemoteMessage()
+            msg.ParseFromString(raw_msg)
+
+            if msg.HasField("remote_ime_show_request"):
+                logger.info("IME Show Request detected!")
+                info = msg.remote_ime_show_request.remote_text_field_status
+                logger.debug(f"IME Info: value='{info.value}', label='{info.label}'")
+
+                # Broadcast event to frontend
+                broadcast_event("ime_show", {
+                    "value": info.value,
+                    "label": info.label,
+                    "start": info.start,
+                    "end": info.end
+                })
+
+                # IMPORTANT: Send an acknowledgment back to claim the keyboard session
+                # This should dismiss the "Use keyboard on mobile device" notification
+                # We send an empty IME edit to acknowledge we've taken control
+                from androidtvremote2.remotemessage_pb2 import RemoteImeBatchEdit, RemoteEditInfo, RemoteImeObject
+
+                # Create a response acknowledging the IME session
+                response = RemoteMessage()
+                ime_object = RemoteImeObject(start=0, end=0, value="")
+                edit_info = RemoteEditInfo(insert=0, text_field_status=ime_object)
+                batch_edit = RemoteImeBatchEdit(
+                    ime_counter=info.counter_field,
+                    field_counter=info.counter_field,
+                    edit_info=[edit_info],
+                )
+                response.remote_ime_batch_edit.CopyFrom(batch_edit)
+
+                # Send the acknowledgment
+                self._send_message(response)
+                logger.info("Sent IME acknowledgment to TV")
+
+        except Exception as e:
+            logger.error(f"Error intercepting message: {e}")
+
+        # Now let the parent class handle it normally
+        super()._handle_message(raw_msg)
+
+
+class CustomAndroidTVRemote(AndroidTVRemote):
+    """Custom AndroidTVRemote that uses CustomRemoteProtocol"""
+
+    async def async_connect(self) -> None:
+        """Connect to an Android TV."""
+        # We need to override this to inject our CustomRemoteProtocol
+        # This is a copy of AndroidTVRemote.async_connect but with CustomRemoteProtocol
+
+        ssl_context = await self._create_ssl_context()
+        on_con_lost = self._loop.create_future()
+        on_remote_started = self._loop.create_future()
+
+        try:
+            (
+                self._transport,
+                self._remote_message_protocol,
+            ) = await self._loop.create_connection(
+                lambda: CustomRemoteProtocol(
+                    on_con_lost,
+                    on_remote_started,
+                    self._on_is_on_updated,
+                    self._on_current_app_updated,
+                    self._on_volume_info_updated,
+                    self._loop,
+                    self._enable_ime,
+                    self._enable_voice,
+                ),
+                self.host,
+                self._api_port,
+                ssl=ssl_context,
+            )
+        except OSError as exc:
+            logger.debug("Couldn't connect to %s:%s. Error: %s", self.host, self._api_port, exc)
+            if isinstance(exc, ssl.SSLError):
+                raise InvalidAuth("Need to pair") from exc
+            raise CannotConnect(f"Couldn't connect to {self.host}:{self._api_port}") from exc
+
+        await asyncio.wait((on_con_lost, on_remote_started), return_when=asyncio.FIRST_COMPLETED)
+        if on_con_lost.done():
+            con_lost_exc = on_con_lost.result()
+            logger.debug(
+                "Couldn't connect to %s:%s. Error: %s",
+                self.host,
+                self._api_port,
+                con_lost_exc,
+            )
+            if isinstance(con_lost_exc, ssl.SSLError):
+                raise InvalidAuth("Need to pair again") from con_lost_exc
+            raise ConnectionClosed("Connection closed") from con_lost_exc
 
 
 def load_config():
@@ -51,13 +177,15 @@ async def initialize_tv(force=False):
         cert_file = Path(__file__).parent / "data" / "cert.pem"
         key_file = Path(__file__).parent / "data" / "key.pem"
 
-        # Create AndroidTVRemote instance
-        tv_remote = AndroidTVRemote(
+        # Create CustomAndroidTVRemote instance
+        tv_remote = CustomAndroidTVRemote(
             client_name="droidtv-remote",
             certfile=str(cert_file),
             keyfile=str(key_file),
             host=config.get('tv_ip', '127.0.0.1'),
+            enable_ime=False,  # Disable IME to prevent "Use keyboard on mobile device" notification
         )
+
 
         logger.info(f"Connecting to {config.get('tv_name', 'TV')} at {config.get('tv_ip')}...")
 
@@ -244,6 +372,32 @@ async def send_text_handler(request):
         return web.json_response({"error": str(e)}, status=500)
 
 
+async def events_handler(request):
+    """Long polling endpoint for server events"""
+    global server_event_futures
+
+    # Create a future for this request
+    future = asyncio.Future()
+    server_event_futures.append(future)
+
+    logger.debug(f"Client waiting for events. Total waiters: {len(server_event_futures)}")
+
+    try:
+        # Wait for an event or timeout (30s)
+        event = await asyncio.wait_for(future, timeout=30.0)
+        return web.json_response(event)
+    except asyncio.TimeoutError:
+        # Remove future if it's still there (it should be cleared by broadcast_event but just in case)
+        if future in server_event_futures:
+            server_event_futures.remove(future)
+        return web.json_response({"type": "keepalive"})
+    except Exception as e:
+        logger.error(f"Error in events handler: {e}")
+        if future in server_event_futures:
+            server_event_futures.remove(future)
+        return web.json_response({"error": str(e)}, status=500)
+
+
 @web.middleware
 async def error_middleware(request, handler):
     try:
@@ -339,6 +493,7 @@ def create_app():
     app.router.add_post('/api/send_key', send_key_handler)
     app.router.add_post('/api/send_text', send_text_handler)
     app.router.add_post('/api/launch_app', launch_app_handler)
+    app.router.add_get('/api/events', events_handler)
 
     # Static files at the ROOT
     app.router.add_static('/icons/', (Path(__file__).parent / 'data' / 'icons').resolve(), name='icons', show_index=True)

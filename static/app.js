@@ -459,6 +459,55 @@ createApp({
         };
 
         /**
+         * Listen for server events (Long Polling)
+         */
+        const listenForEvents = async () => {
+            if (!connectionStatus.value) {
+                // effective waiting if not connected
+                setTimeout(listenForEvents, 3000);
+                return;
+            }
+
+            try {
+                const response = await fetch('api/events');
+                if (response.ok) {
+                    const event = await response.json();
+
+                    if (event.type === 'ime_show') {
+                        console.log('IME Show event received:', event.data);
+
+                        // Update current text if provided
+                        if (event.data && event.data.value !== undefined) {
+                            keyboardText.value = event.data.value;
+                            lastSentText.value = event.data.value; // Sync to avoid re-sending
+                        }
+
+                        // Focus the keyboard input and scroll it into view
+                        if (keyboardInput.value) {
+                            keyboardInput.value.focus();
+                            keyboardInput.value.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+                            // Visual feedback
+                            console.log("Keyboard auto-focused!");
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error("Error listening for events:", e);
+                // Wait a bit before retrying on error
+                await new Promise(r => setTimeout(r, 2000));
+            }
+
+            // Loop
+            if (!document.hidden) {
+                listenForEvents();
+            } else {
+                // precise backoff if tab hidden
+                setTimeout(listenForEvents, 1000);
+            }
+        };
+
+        /**
          * Lifecycle: Component mounted
          */
         onMounted(() => {
@@ -474,11 +523,15 @@ createApp({
                 showInstallButton.value = false;
             }
 
+
             // Check status immediately
             checkStatus();
 
             // Check status every 2 seconds
             statusCheckInterval = setInterval(checkStatus, 2000);
+
+            // Start listening for server events (long polling)
+            listenForEvents();
 
             // Check for secure context
             if (!window.isSecureContext && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
