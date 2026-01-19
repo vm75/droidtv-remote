@@ -212,20 +212,35 @@ async def send_text_handler(request):
     """Send text input to TV"""
     data = await request.json()
     text = data.get('text', '')
+    send_enter = data.get('enter', False)
 
     if not tv_remote:
         return web.json_response({"error": "Not connected to TV"}, status=400)
+
+    # Check if connected
+    if not hasattr(tv_remote, '_remote_message_protocol') or tv_remote._remote_message_protocol is None:
+        logger.warning("Attempted to send text but connection appears closed")
+        return web.json_response({"error": "Connection lost"}, status=400)
 
     if not text:
         return web.json_response({"error": "No text provided"}, status=400)
 
     try:
         # Use the native send_text method from the library
+        logger.info(f"Sending text to TV (len: {len(text)}, enter: {send_enter})")
         tv_remote.send_text(text)
-        logger.info(f"Sent text: {text}")
+
+        if send_enter:
+            await asyncio.sleep(0.5) # Wait for text to be processed
+            logger.info("Sending trailing ENTER key")
+            tv_remote.send_key_command('KEYCODE_ENTER')
+
         return web.json_response({"status": "ok"})
+    except (ConnectionClosed, ConnectionError) as e:
+        logger.error(f"Connection lost while sending text: {e}")
+        return web.json_response({"error": "Connection lost"}, status=400)
     except Exception as e:
-        logger.error(f"Error sending text: {e}")
+        logger.exception(f"Unexpected error sending text: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
 

@@ -15,7 +15,6 @@ createApp({
         const apps = ref([]);
         const tvName = ref('Android TV');
         const errorMessage = ref('');
-        const showKeyboardModal = ref(false);
         const keyboardText = ref('');
         const keyboardInput = ref(null);
         const lastSentText = ref('');
@@ -24,6 +23,7 @@ createApp({
         const updateAvailable = ref(false);
         const showPwaHelp = ref(false);
         const pwaHelpMessage = ref('');
+        const autoEnter = ref(true);
 
         let statusCheckInterval = null;
 
@@ -204,77 +204,135 @@ createApp({
             }, 5000);
         };
 
-        /**
-         * Open keyboard input modal
-         */
-        const openKeyboard = () => {
-            if (!connectionStatus.value) {
-                showError('Not connected to TV');
-                return;
-            }
 
-            showKeyboardModal.value = true;
-            keyboardText.value = '';
-            lastSentText.value = '';
-
-            // Focus the input after modal opens
-            setTimeout(() => {
-                if (keyboardInput.value) {
-                    keyboardInput.value.focus();
-                }
-            }, 100);
-        };
 
         /**
-         * Close keyboard input modal
+         * Robust keyboard input handling
          */
-        const closeKeyboard = () => {
-            showKeyboardModal.value = false;
-            keyboardText.value = '';
-            lastSentText.value = '';
-        };
-
-        /**
-         * Handle real-time keyboard input
-         */
-        const handleKeyboardInput = async () => {
+        const handleKeyboardInput = (event) => {
             const current = keyboardText.value;
             const previous = lastSentText.value;
 
-            if (current.length > previous.length) {
-                // Character added
+            // Update lastSentText IMMEDIATELY to prevent double-processing if events fire fast
+            lastSentText.value = current;
+
+            if (current === previous) return;
+
+            // Common case: typing characters at the end
+            if (current.startsWith(previous)) {
                 const added = current.slice(previous.length);
-                for (const char of added) {
-                    await sendTextChar(char);
-                }
-            } else if (current.length < previous.length) {
-                // Character removed
-                const diff = previous.length - current.length;
-                for (let i = 0; i < diff; i++) {
-                    await sendKey('KEYCODE_DEL');
+                if (added.length > 0) {
+                    sendText(added);
                 }
             }
-            lastSentText.value = current;
+            // Common case: backspacing at the end
+            else if (previous.startsWith(current)) {
+                const diff = previous.length - current.length;
+                for (let i = 0; i < diff; i++) {
+                    sendKey('KEYCODE_DEL');
+                }
+            }
+            // Edge case: replacement, middle-typing, or pasting
+            else {
+                // Find shared prefix
+                let i = 0;
+                while (i < current.length && i < previous.length && current[i] === previous[i]) {
+                    i++;
+                }
+
+                // Delete diverging part of previous
+                const toDelete = previous.length - i;
+                for (let d = 0; d < toDelete; d++) {
+                    sendKey('KEYCODE_DEL');
+                }
+
+                // Add diverging part of current
+                const toAdd = current.slice(i);
+                if (toAdd.length > 0) {
+                    sendText(toAdd);
+                }
+            }
         };
 
         /**
-         * Send a single character as text
+         * Global keyboard listener for D-pad and navigation
          */
-        const sendTextChar = async (char) => {
-            if (!connectionStatus.value) return;
+        const handleGlobalKeyDown = (event) => {
+            // If the user is typing in an input field, don't trigger global hotkeys
+            const isInputFocus = event.target.tagName === 'INPUT' ||
+                event.target.tagName === 'TEXTAREA' ||
+                event.target.isContentEditable;
+
+            if (isInputFocus) {
+                return;
+            }
+
+            const keyMap = {
+                'ArrowUp': 'KEYCODE_DPAD_UP',
+                'ArrowDown': 'KEYCODE_DPAD_DOWN',
+                'ArrowLeft': 'KEYCODE_DPAD_LEFT',
+                'ArrowRight': 'KEYCODE_DPAD_RIGHT',
+                'Enter': 'KEYCODE_DPAD_CENTER',
+                'Backspace': 'KEYCODE_BACK',
+                'Escape': 'KEYCODE_BACK',
+                'h': 'KEYCODE_HOME',
+                'Home': 'KEYCODE_HOME',
+                ' ': 'KEYCODE_MEDIA_PLAY_PAUSE',
+            };
+
+            const keyCode = keyMap[event.key];
+            if (keyCode) {
+                event.preventDefault();
+                sendKey(keyCode);
+            }
+        };
+
+        /**
+         * Send text to Android TV
+         */
+        const sendText = (text) => {
+            if (!connectionStatus.value || !text) return;
 
             try {
-                await fetch('api/send_text', {
+                fetch('api/send_text', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: char })
+                    body: JSON.stringify({ text: text })
                 });
 
                 if (navigator.vibrate) {
                     navigator.vibrate(10);
                 }
             } catch (error) {
-                console.error('Error sending character:', error);
+                console.error('Error sending text:', error);
+            }
+        };
+
+        /**
+         * Send the entire text block at once (Better for Google TV Search)
+         */
+        const submitFullText = async () => {
+            if (!keyboardText.value || !connectionStatus.value) return;
+
+            try {
+                await fetch('api/send_text', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        text: keyboardText.value,
+                        enter: autoEnter.value
+                    })
+                });
+
+                // Set lastSentText so characters aren't re-sent if typing continues
+                lastSentText.value = keyboardText.value;
+
+                if (navigator.vibrate) {
+                    navigator.vibrate([50, 30, 50]);
+                }
+            } catch (error) {
+                console.error('Error submitting full text:', error);
+                showError('Failed to send text');
             }
         };
 
@@ -284,6 +342,9 @@ createApp({
         const handleKeyDown = (event) => {
             if (event.key === 'Enter') {
                 sendKey('KEYCODE_ENTER');
+            } else if (event.key === 'Backspace' && keyboardText.value === '') {
+                // If input is empty, still send backspace to TV
+                sendKey('KEYCODE_DEL');
             }
         };
 
@@ -292,6 +353,10 @@ createApp({
          */
         const sendSpecialKey = (keyCode) => {
             sendKey(keyCode);
+            // Refocus input after clicking a button
+            if (keyboardInput.value) {
+                keyboardInput.value.focus();
+            }
         };
 
         /**
@@ -300,9 +365,11 @@ createApp({
         const clearKeyboardText = () => {
             keyboardText.value = '';
             lastSentText.value = '';
-            if (keyboardInput.value) {
-                keyboardInput.value.focus();
-            }
+            setTimeout(() => {
+                if (keyboardInput.value) {
+                    keyboardInput.value.focus();
+                }
+            }, 50);
         };
 
         /**
@@ -345,8 +412,12 @@ createApp({
         onMounted(() => {
             console.log('Vue app mounted');
 
-            // Hide install button if already in standalone mode
-            if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
+            // Add global keyboard listener
+            window.addEventListener('keydown', handleGlobalKeyDown);
+
+            // Detect standalone mode (already installed and running)
+            const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+            if (isStandalone) {
                 console.log('App is already running in standalone mode');
                 showInstallButton.value = false;
             }
@@ -364,21 +435,37 @@ createApp({
 
             // Detect iOS
             const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-            if (isIOS && !window.navigator.standalone) {
+            if (isIOS && !isStandalone) {
                 console.log('iOS detected: To install, tap Share and "Add to Home Screen"');
                 pwaHelpMessage.value = 'On iOS: Tap Share icon then "Add to Home Screen"';
                 showPwaHelp.value = true;
             }
 
-            // Diagnostic timer
-            setTimeout(() => {
-                if (!showInstallButton.value && !window.navigator.standalone && !isIOS) {
+            // Diagnostic timer to show why install button might be missing
+            setTimeout(async () => {
+                const currentIsStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+
+                if (!showInstallButton.value && !currentIsStandalone && !isIOS) {
                     if (!window.isSecureContext && window.location.hostname !== 'localhost') {
                         pwaHelpMessage.value = 'PWA requires HTTPS (currently using insecure HTTP)';
+                        showPwaHelp.value = true;
                     } else {
-                        pwaHelpMessage.value = 'PWA requirements not met or already installed';
+                        // Check if service worker is registered. If it is, and we're here,
+                        // it's likely already installed or requirements are met but browser is waiting.
+                        try {
+                            const registrations = await navigator.serviceWorker.getRegistrations();
+                            if (registrations.length === 0) {
+                                pwaHelpMessage.value = 'PWA requirements not met';
+                                showPwaHelp.value = true;
+                            } else {
+                                // Likely already installed, hide the help message
+                                showPwaHelp.value = false;
+                            }
+                        } catch (e) {
+                            pwaHelpMessage.value = 'PWA requirements not met';
+                            showPwaHelp.value = true;
+                        }
                     }
-                    showPwaHelp.value = true;
                 }
             }, 5000);
 
@@ -437,6 +524,9 @@ createApp({
         onUnmounted(() => {
             console.log('Vue app unmounted');
 
+            // Remove global keyboard listener
+            window.removeEventListener('keydown', handleGlobalKeyDown);
+
             // Clean up interval
             if (statusCheckInterval) {
                 clearInterval(statusCheckInterval);
@@ -453,7 +543,6 @@ createApp({
             apps,
             tvName,
             errorMessage,
-            showKeyboardModal,
             keyboardText,
             keyboardInput,
             lastSentText,
@@ -468,12 +557,12 @@ createApp({
             submitPairingCode,
             closePairingModal,
             connectToTV,
-            openKeyboard,
-            closeKeyboard,
             handleKeyboardInput,
             handleKeyDown,
             sendSpecialKey,
             clearKeyboardText,
+            submitFullText,
+            autoEnter,
             installApp,
             refreshApp
         };
