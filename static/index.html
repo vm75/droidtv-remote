@@ -164,66 +164,75 @@
             <!-- Main Remote Control Section -->
             <div class="glass rounded-3xl p-6 mb-6 shadow-2xl">
                 <div class="relative">
-                    <!-- D-Pad with Circle Border -->
-                    <div class="relative w-48 h-48 mx-auto mb-16 mt-12">
-                        <!-- Menu Button - Top Left -->
-                        <button @click="sendKey('KEYCODE_MENU')"
-                            class="remote-btn absolute -top-8 -left-8 w-11 h-11 bg-gradient-to-br from-gray-700 to-gray-800 rounded-full shadow-lg hover:from-gray-600 text-white z-20 flex items-center justify-center">
-                            <i class="mdi mdi-menu text-xl"></i>
-                        </button>
+                    <!-- D-Pad with Circle Border - 3 Column Layout -->
+                    <div class="flex items-center justify-center gap-4 mb-6">
+                        <!-- Left Column: Menu (top) and Back (bottom) -->
+                        <div class="flex flex-col justify-between h-48">
+                            <!-- Menu Button -->
+                            <button @click="sendKey('KEYCODE_MENU')"
+                                class="remote-btn w-11 h-11 bg-gradient-to-br from-gray-700 to-gray-800 rounded-full shadow-lg hover:from-gray-600 text-white flex items-center justify-center">
+                                <i class="mdi mdi-menu text-xl"></i>
+                            </button>
 
-                        <!-- Settings Button - Top Right -->
-                        <button @click="sendKey('KEYCODE_SETTINGS')"
-                            class="remote-btn absolute -top-8 -right-8 w-11 h-11 bg-gradient-to-br from-gray-700 to-gray-800 rounded-full shadow-lg hover:from-gray-600 text-white z-20 flex items-center justify-center">
-                            <i class="mdi mdi-cog text-xl"></i>
-                        </button>
-
-                        <!-- Back Button - Bottom Left -->
-                        <button @click="sendKey('KEYCODE_BACK')"
-                            class="remote-btn absolute -bottom-8 -left-8 w-11 h-11 bg-gradient-to-br from-gray-700 to-gray-800 rounded-full shadow-lg hover:from-gray-600 text-white z-20 flex items-center justify-center">
-                            <i class="mdi mdi-arrow-left text-xl"></i>
-                        </button>
-
-                        <!-- Home Button - Bottom Right -->
-                        <button @click="sendKey('KEYCODE_HOME')"
-                            class="remote-btn absolute -bottom-8 -right-8 w-11 h-11 bg-gradient-to-br from-gray-700 to-gray-800 rounded-full shadow-lg hover:from-gray-600 text-white z-20 flex items-center justify-center">
-                            <i class="mdi mdi-home text-xl"></i>
-                        </button>
-
-                        <!-- Circle Border -->
-                        <div class="absolute inset-0 rounded-full border-2 border-slate-600 opacity-30"></div>
-
-                        <div class="absolute inset-0 flex items-center justify-center">
-                            <!-- Center OK Button -->
-                            <button @click="sendKey('KEYCODE_DPAD_CENTER')"
-                                class="remote-btn w-16 h-16 rounded-full bg-gradient-to-br from-blue-600 to-blue-800 text-white font-bold text-sm shadow-lg hover:from-blue-500 hover:to-blue-700 z-10 flex items-center justify-center">
-                                OK
+                            <!-- Back Button -->
+                            <button @click="sendKey('KEYCODE_BACK')"
+                                class="remote-btn w-11 h-11 bg-gradient-to-br from-gray-700 to-gray-800 rounded-full shadow-lg hover:from-gray-600 text-white flex items-center justify-center">
+                                <i class="mdi mdi-arrow-left text-xl"></i>
                             </button>
                         </div>
 
-                        <!-- Up -->
-                        <button @click="sendKey('KEYCODE_DPAD_UP')"
-                            class="remote-btn absolute top-0 left-1/2 -translate-x-1/2 w-12 h-16 bg-gradient-to-b from-slate-700 to-slate-800 rounded-t-full shadow-lg hover:from-slate-600">
-                            <i class="mdi mdi-chevron-up text-xl text-white"></i>
-                        </button>
+                        <!-- Center Column: D-Pad -->
+                        <div class="relative w-48 h-48 flex-shrink-0">
+                            <!-- Circle Border -->
+                            <div class="absolute inset-0 rounded-full border-2 border-slate-600 opacity-30"></div>
 
-                        <!-- Down -->
-                        <button @click="sendKey('KEYCODE_DPAD_DOWN')"
-                            class="remote-btn absolute bottom-0 left-1/2 -translate-x-1/2 w-12 h-16 bg-gradient-to-b from-slate-800 to-slate-700 rounded-b-full shadow-lg hover:to-slate-600">
-                            <i class="mdi mdi-chevron-down text-xl text-white"></i>
-                        </button>
+                            <div class="absolute inset-0 flex items-center justify-center">
+                                <!-- Center OK Button -->
+                                <button @click="sendKey('KEYCODE_DPAD_CENTER')"
+                                    class="remote-btn w-16 h-16 rounded-full bg-gradient-to-br from-blue-600 to-blue-800 text-white font-bold text-sm shadow-lg hover:from-blue-500 hover:to-blue-700 z-10 flex items-center justify-center">
+                                    OK
+                                </button>
+                            </div>
 
-                        <!-- Left -->
-                        <button @click="sendKey('KEYCODE_DPAD_LEFT')"
-                            class="remote-btn absolute left-0 top-1/2 -translate-y-1/2 w-16 h-12 bg-gradient-to-r from-slate-700 to-slate-800 rounded-l-full shadow-lg hover:from-slate-600">
-                            <i class="mdi mdi-chevron-left text-xl text-white"></i>
-                        </button>
+                            <!-- Up -->
+                            <button @click="sendKey('KEYCODE_DPAD_UP')"
+                                class="remote-btn absolute top-0 left-1/2 -translate-x-1/2 w-12 h-16 bg-gradient-to-b from-slate-700 to-slate-800 rounded-t-full shadow-lg hover:from-slate-600">
+                                <i class="mdi mdi-chevron-up text-xl text-white"></i>
+                            </button>
 
-                        <!-- Right -->
-                        <button @click="sendKey('KEYCODE_DPAD_RIGHT')"
-                            class="remote-btn absolute right-0 top-1/2 -translate-y-1/2 w-16 h-12 bg-gradient-to-r from-slate-800 to-slate-700 rounded-r-full shadow-lg hover:to-slate-600">
-                            <i class="mdi mdi-chevron-right text-xl text-white"></i>
-                        </button>
+                            <!-- Down -->
+                            <button @click="sendKey('KEYCODE_DPAD_DOWN')"
+                                class="remote-btn absolute bottom-0 left-1/2 -translate-x-1/2 w-12 h-16 bg-gradient-to-b from-slate-800 to-slate-700 rounded-b-full shadow-lg hover:to-slate-600">
+                                <i class="mdi mdi-chevron-down text-xl text-white"></i>
+                            </button>
+
+                            <!-- Left -->
+                            <button @click="sendKey('KEYCODE_DPAD_LEFT')"
+                                class="remote-btn absolute left-0 top-1/2 -translate-y-1/2 w-16 h-12 bg-gradient-to-r from-slate-700 to-slate-800 rounded-l-full shadow-lg hover:from-slate-600">
+                                <i class="mdi mdi-chevron-left text-xl text-white"></i>
+                            </button>
+
+                            <!-- Right -->
+                            <button @click="sendKey('KEYCODE_DPAD_RIGHT')"
+                                class="remote-btn absolute right-0 top-1/2 -translate-y-1/2 w-16 h-12 bg-gradient-to-r from-slate-800 to-slate-700 rounded-r-full shadow-lg hover:to-slate-600">
+                                <i class="mdi mdi-chevron-right text-xl text-white"></i>
+                            </button>
+                        </div>
+
+                        <!-- Right Column: Settings (top) and Home (bottom) -->
+                        <div class="flex flex-col justify-between h-48">
+                            <!-- Settings Button -->
+                            <button @click="sendKey('KEYCODE_SETTINGS')"
+                                class="remote-btn w-11 h-11 bg-gradient-to-br from-gray-700 to-gray-800 rounded-full shadow-lg hover:from-gray-600 text-white flex items-center justify-center">
+                                <i class="mdi mdi-cog text-xl"></i>
+                            </button>
+
+                            <!-- Home Button -->
+                            <button @click="sendKey('KEYCODE_HOME')"
+                                class="remote-btn w-11 h-11 bg-gradient-to-br from-gray-700 to-gray-800 rounded-full shadow-lg hover:from-gray-600 text-white flex items-center justify-center">
+                                <i class="mdi mdi-home text-xl"></i>
+                            </button>
+                        </div>
                     </div>
 
                     <!-- Volume Controls -->
