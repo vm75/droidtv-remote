@@ -1,0 +1,39 @@
+# droidtv-remote Configuration
+
+# Android TV connection settings
+tv_ip: "192.168.1.100"  # Change this to your Android TV's IP address
+tv_name: "Living Room TV"
+
+# App shortcuts (add your favorite apps here)
+apps:
+  - name: "Netflix"
+    id: "com.netflix.ninja"
+    icon: "mdi-netflix"
+
+  - name: "YouTube"
+    id: "com.google.android.youtube.tv"
+    icon: "mdi-youtube"
+
+  - name: "Disney+"
+    id: "com.disney.disneyplus"
+    icon: "mdi-disney"
+
+  - name: "Prime Video"
+    id: "com.amazon.amazonvideo.livingroom"
+    icon: "mdi-amazon"
+
+  - name: "Plex"
+    id: "com.plexapp.android"
+    icon: "mdi-plex"
+
+  - name: "Spotify"
+    id: "com.spotify.tv.android"
+    icon: "mdi-spotify"
+
+  - name: "HBO Max"
+    id: "com.hbo.hbonow"
+    icon: "mdi-alpha-h-box"
+
+  - name: "Hulu"
+    id: "com.hulu.plus"
+    icon: "mdi-hulu"

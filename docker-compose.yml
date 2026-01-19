@@ -1,0 +1,13 @@
+services:
+  droidtv-remote:
+    build: .
+    container_name: droidtv-remote
+    image: vm75/droidtv-remote:latest
+    restart: unless-stopped
+    # Using host networking is highly recommended for LAN devices
+    # to ensure the container can reach the TV without issues.
+    network_mode: host
+    volumes:
+      - ./data:/app/data
+    environment:
+      - PYTHONUNBUFFERED=1

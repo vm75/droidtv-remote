@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#0f172a">
+    <title>droidtv-remote</title>
+
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="manifest.json">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="icon.svg">
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com/"></script>
+
+    <!-- Material Design Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css">
+
+    <!-- Vue 3 CDN -->
+    <script src="https://unpkg.com/vue@3.4.15/dist/vue.global.prod.js"></script>
+
+    <!-- Custom Tailwind Configuration -->
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        'remote-dark': '#0f172a',
+                        'remote-darker': '#020617',
+                        'remote-accent': '#3b82f6',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Custom Styles */
+        body {
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+            -webkit-user-select: none;
+            user-select: none;
+            touch-action: manipulation;
+        }
+
+        /* Smooth transitions */
+        * {
+            transition: all 0.2s ease;
+        }
+
+        /* Button press effect */
+        .remote-btn:active {
+            transform: scale(0.95);
+            box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Glassmorphism effect */
+        .glass {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        /* Hide scrollbar but keep functionality */
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        /* Pulse animation for connection status */
+        @keyframes pulse-glow {
+
+            0%,
+            100% {
+                opacity: 1;
+                box-shadow: 0 0 10px currentColor;
+            }
+
+            50% {
+                opacity: 0.7;
+                box-shadow: 0 0 20px currentColor;
+            }
+        }
+
+        .pulse-glow {
+            animation: pulse-glow 2s ease-in-out infinite;
+        }
+    </style>
+</head>
+
+<body class="dark bg-gradient-to-br from-remote-darker via-remote-dark to-slate-900 min-h-screen">
+    <div id="app">
+        <!-- Header -->
+        <header class="glass sticky top-0 z-50 px-4 py-3 shadow-lg">
+            <div class="max-w-md mx-auto flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <span class="text-3xl">📺</span>
+                    <div>
+                        <h1 class="text-xl font-bold text-white">{{ tvName }}</h1>
+                        <p class="text-xs text-gray-400">Remote Control</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <!-- Power Button -->
+                    <button @click="sendKey('KEYCODE_POWER')"
+                        class="remote-btn w-9 h-9 bg-gradient-to-br from-red-600 to-red-800 rounded-full shadow-lg hover:from-red-500 text-white flex items-center justify-center">
+                        <i class="mdi mdi-power text-lg"></i>
+                    </button>
+
+                    <div v-if="connectionStatus" class="flex items-center gap-2 text-green-400 text-sm"
+                        :class="{'pulse-glow': !connectionStatus}">
+                        <span class="w-2 h-2 rounded-full bg-green-400"></span>
+                        <span>Connected</span>
+                    </div>
+                    <div v-else class="flex items-center gap-2">
+                        <div class="flex items-center gap-2 text-orange-400 text-sm">
+                            <span class="w-2 h-2 rounded-full bg-orange-400 pulse-glow"></span>
+                            <span>Not Connected</span>
+                        </div>
+                        <button @click="connectToTV"
+                            class="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded-lg font-semibold">
+                            Connect
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Remote Control -->
+        <main class="max-w-md mx-auto px-4 py-6 pb-24">
+            <!-- Quick Launch - Single Row with Horizontal Scroll -->
+            <div v-if="apps.length &gt; 0" class="mb-6">
+                <h3 class="text-white font-semibold mb-3 px-2 flex items-center gap-2">
+                    <i class="mdi mdi-apps"></i>
+                    Quick Launch
+                </h3>
+                <div class="flex gap-3 overflow-x-auto hide-scrollbar pb-2">
+                    <button v-for="app in apps" :key="app.id" @click="launchApp(app.id)"
+                        class="remote-btn flex-shrink-0 w-16 h-16 glass rounded-xl shadow-lg hover:bg-slate-700 flex items-center justify-center p-2 overflow-hidden">
+                        <!-- Custom Image Icon -->
+                        <img v-if="app.icon && app.icon.includes('.')" :src="app.icon"
+                            class="w-full h-full object-contain" :alt="app.name">
+
+                        <!-- Material Design Icon -->
+                        <i v-else-if="app.icon && app.icon.trim()" :class="['mdi', app.icon, 'text-3xl']"
+                            class="text-white"></i>
+
+                        <!-- Text Fallback -->
+                        <span v-else
+                            class="text-[10px] font-bold text-white text-center leading-tight line-clamp-2 uppercase">
+                            {{ app.name }}
+                        </span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Main Remote Control Section -->
+            <div class="glass rounded-3xl p-6 mb-6 shadow-2xl">
+                <div class="relative">
+                    <!-- Back Button - Top Left -->
+                    <button @click="sendKey('KEYCODE_BACK')"
+                        class="remote-btn absolute -top-2 left-0 w-10 h-10 bg-gradient-to-br from-gray-700 to-gray-800 rounded-full shadow-lg hover:from-gray-600 text-white z-20 flex items-center justify-center">
+                        <i class="mdi mdi-arrow-left text-xl"></i>
+                    </button>
+
+                    <!-- Home Button - Top Right -->
+                    <button @click="sendKey('KEYCODE_HOME')"
+                        class="remote-btn absolute -top-2 right-0 w-10 h-10 bg-gradient-to-br from-gray-700 to-gray-800 rounded-full shadow-lg hover:from-gray-600 text-white z-20 flex items-center justify-center">
+                        <i class="mdi mdi-home text-xl"></i>
+                    </button>
+
+                    <!-- D-Pad with Circle Border -->
+                    <div class="relative w-48 h-48 mx-auto mb-6 mt-8">
+                        <!-- Circle Border -->
+                        <div class="absolute inset-0 rounded-full border-2 border-slate-600 opacity-30"></div>
+
+                        <div class="absolute inset-0 flex items-center justify-center">
+                            <!-- Center OK Button -->
+                            <button @click="sendKey('KEYCODE_DPAD_CENTER')"
+                                class="remote-btn w-16 h-16 rounded-full bg-gradient-to-br from-blue-600 to-blue-800 text-white font-bold text-sm shadow-lg hover:from-blue-500 hover:to-blue-700 z-10 flex items-center justify-center">
+                                OK
+                            </button>
+                        </div>
+
+                        <!-- Up -->
+                        <button @click="sendKey('KEYCODE_DPAD_UP')"
+                            class="remote-btn absolute top-0 left-1/2 -translate-x-1/2 w-12 h-16 bg-gradient-to-b from-slate-700 to-slate-800 rounded-t-full shadow-lg hover:from-slate-600">
+                            <i class="mdi mdi-chevron-up text-xl text-white"></i>
+                        </button>
+
+                        <!-- Down -->
+                        <button @click="sendKey('KEYCODE_DPAD_DOWN')"
+                            class="remote-btn absolute bottom-0 left-1/2 -translate-x-1/2 w-12 h-16 bg-gradient-to-b from-slate-800 to-slate-700 rounded-b-full shadow-lg hover:to-slate-600">
+                            <i class="mdi mdi-chevron-down text-xl text-white"></i>
+                        </button>
+
+                        <!-- Left -->
+                        <button @click="sendKey('KEYCODE_DPAD_LEFT')"
+                            class="remote-btn absolute left-0 top-1/2 -translate-y-1/2 w-16 h-12 bg-gradient-to-r from-slate-700 to-slate-800 rounded-l-full shadow-lg hover:from-slate-600">
+                            <i class="mdi mdi-chevron-left text-xl text-white"></i>
+                        </button>
+
+                        <!-- Right -->
+                        <button @click="sendKey('KEYCODE_DPAD_RIGHT')"
+                            class="remote-btn absolute right-0 top-1/2 -translate-y-1/2 w-16 h-12 bg-gradient-to-r from-slate-800 to-slate-700 rounded-r-full shadow-lg hover:to-slate-600">
+                            <i class="mdi mdi-chevron-right text-xl text-white"></i>
+                        </button>
+                    </div>
+
+                    <!-- Volume Controls -->
+                    <div class="mt-3">
+                        <div class="grid grid-cols-3 gap-2">
+                            <button @click="sendKey('KEYCODE_VOLUME_DOWN')"
+                                class="remote-btn p-2 bg-gradient-to-br from-green-600 to-green-800 rounded-lg shadow-lg hover:from-green-500 text-white">
+                                <i class="mdi mdi-volume-minus text-xl"></i>
+                            </button>
+                            <button @click="sendKey('KEYCODE_VOLUME_MUTE')"
+                                class="remote-btn p-2 bg-gradient-to-br from-yellow-600 to-yellow-800 rounded-lg shadow-lg hover:from-yellow-500 text-white">
+                                <i class="mdi mdi-volume-off text-xl"></i>
+                            </button>
+                            <button @click="sendKey('KEYCODE_VOLUME_UP')"
+                                class="remote-btn p-2 bg-gradient-to-br from-green-600 to-green-800 rounded-lg shadow-lg hover:from-green-500 text-white">
+                                <i class="mdi mdi-volume-plus text-xl"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Media Controls -->
+                    <div class="mt-4">
+                        <div class="grid grid-cols-5 gap-2">
+                            <button @click="sendKey('KEYCODE_MEDIA_REWIND')"
+                                class="remote-btn p-2 bg-gradient-to-br from-purple-600 to-purple-800 rounded-lg shadow-lg hover:from-purple-500 text-white">
+                                <i class="mdi mdi-rewind text-xl"></i>
+                            </button>
+                            <button @click="sendKey('KEYCODE_MEDIA_PREVIOUS')"
+                                class="remote-btn p-2 bg-gradient-to-br from-purple-600 to-purple-800 rounded-lg shadow-lg hover:from-purple-500 text-white">
+                                <i class="mdi mdi-skip-previous text-xl"></i>
+                            </button>
+                            <button @click="sendKey('KEYCODE_MEDIA_PLAY_PAUSE')"
+                                class="remote-btn p-2 bg-gradient-to-br from-purple-600 to-purple-800 rounded-lg shadow-lg hover:from-purple-500 text-white">
+                                <i class="mdi mdi-play-pause text-xl"></i>
+                            </button>
+                            <button @click="sendKey('KEYCODE_MEDIA_NEXT')"
+                                class="remote-btn p-2 bg-gradient-to-br from-purple-600 to-purple-800 rounded-lg shadow-lg hover:from-purple-500 text-white">
+                                <i class="mdi mdi-skip-next text-xl"></i>
+                            </button>
+                            <button @click="sendKey('KEYCODE_MEDIA_FAST_FORWARD')"
+                                class="remote-btn p-2 bg-gradient-to-br from-purple-600 to-purple-800 rounded-lg shadow-lg hover:from-purple-500 text-white">
+                                <i class="mdi mdi-fast-forward text-xl"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Keyboard Input Button -->
+                    <div class="mt-4">
+                        <button @click="openKeyboard"
+                            class="remote-btn w-full p-3 bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-lg shadow-lg hover:from-indigo-500 text-white flex items-center justify-center gap-2">
+                            <i class="mdi mdi-keyboard text-xl"></i>
+                            <span class="font-semibold">Keyboard</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+
+
+            <!-- Color Buttons -->
+            <div class="glass rounded-3xl p-6 shadow-2xl">
+                <div class="grid grid-cols-4 gap-2">
+                    <button @click="sendKey('KEYCODE_PROG_RED')"
+                        class="remote-btn p-2 bg-red-600 rounded-lg shadow-lg hover:bg-red-500">
+                        <div class="w-6 h-6 mx-auto rounded-full bg-red-400"></div>
+                    </button>
+                    <button @click="sendKey('KEYCODE_PROG_GREEN')"
+                        class="remote-btn p-2 bg-green-600 rounded-lg shadow-lg hover:bg-green-500">
+                        <div class="w-6 h-6 mx-auto rounded-full bg-green-400"></div>
+                    </button>
+                    <button @click="sendKey('KEYCODE_PROG_YELLOW')"
+                        class="remote-btn p-2 bg-yellow-600 rounded-lg shadow-lg hover:bg-yellow-500">
+                        <div class="w-6 h-6 mx-auto rounded-full bg-yellow-400"></div>
+                    </button>
+                    <button @click="sendKey('KEYCODE_PROG_BLUE')"
+                        class="remote-btn p-2 bg-blue-600 rounded-lg shadow-lg hover:bg-blue-500">
+                        <div class="w-6 h-6 mx-auto rounded-full bg-blue-400"></div>
+                    </button>
+                </div>
+            </div>
+        </main>
+
+        <!-- Pairing Modal -->
+        <div v-if="showPairingModal"
+            class="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 px-4"
+            @click.self="closePairingModal">
+            <div class="glass rounded-3xl p-8 max-w-sm w-full shadow-2xl" :class="{'animate-pulse': pairingInProgress}">
+                <h2 class="text-2xl font-bold text-white mb-4 text-center">
+                    <i class="mdi mdi-link-variant text-blue-400"></i>
+                    {{ pairingInProgress ? 'Pairing...' : 'Pairing Required' }}
+                </h2>
+                <p class="text-gray-300 mb-6 text-center">
+                    {{ pairingInProgress ? 'Completing pairing process...' : 'Enter the pairing code displayed on TV' }}
+                </p>
+                <input v-model="pairingCode" type="text" inputmode="text" maxlength="6" placeholder="ABC123"
+                    :disabled="pairingInProgress"
+                    class="w-full px-6 py-4 bg-slate-800 text-white text-center text-2xl tracking-widest rounded-xl border-2 border-blue-500 focus:border-blue-400 focus:outline-none mb-6 uppercase disabled:opacity-50 disabled:cursor-not-allowed"
+                    @keyup.enter="submitPairingCode">
+                <div class="flex gap-3">
+                    <button @click="closePairingModal" :disabled="pairingInProgress"
+                        class="flex-1 px-6 py-3 bg-gray-700 text-white rounded-xl hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed">
+                        Cancel
+                    </button>
+                    <button @click="submitPairingCode" :disabled="pairingInProgress"
+                        class="flex-1 px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-800 text-white rounded-xl hover:from-blue-500 hover:to-blue-700 font-semibold disabled:opacity-50 disabled:cursor-not-allowed">
+                        <span v-if="!pairingInProgress">Pair</span>
+                        <span v-else class="flex items-center justify-center gap-2">
+                            <i class="mdi mdi-loading mdi-spin"></i>
+                            Pairing...
+                        </span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Keyboard Input Modal -->
+        <div v-if="showKeyboardModal"
+            class="fixed inset-0 bg-black bg-opacity-80 flex items-end sm:items-center justify-center z-50"
+            @click.self="closeKeyboard">
+            <div class="glass rounded-t-3xl sm:rounded-3xl p-6 w-full sm:max-w-lg sm:w-full shadow-2xl">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                        <i class="mdi mdi-keyboard text-indigo-400"></i>
+                        Keyboard Input
+                    </h2>
+                    <button @click="closeKeyboard"
+                        class="w-8 h-8 rounded-full bg-gray-700 hover:bg-gray-600 flex items-center justify-center text-white">
+                        <i class="mdi mdi-close"></i>
+                    </button>
+                </div>
+
+                <p class="text-gray-300 text-sm mb-4">
+                    Start typing - keys are sent directly to your TV
+                </p>
+
+                <input v-model="keyboardText" ref="keyboardInput" type="text" placeholder="Start typing..."
+                    class="w-full px-4 py-3 bg-slate-800 text-white rounded-xl border-2 border-indigo-500 focus:border-indigo-400 focus:outline-none mb-4"
+                    @input="handleKeyboardInput" @keydown="handleKeyDown">
+
+                <div class="grid grid-cols-3 gap-2">
+                    <button @click="sendSpecialKey('KEYCODE_DEL')"
+                        class="remote-btn p-2 bg-gradient-to-br from-red-600 to-red-800 rounded-lg shadow-lg hover:from-red-500 text-white text-sm">
+                        <i class="mdi mdi-backspace"></i>
+                        Backspace
+                    </button>
+                    <button @click="sendSpecialKey('KEYCODE_ENTER')"
+                        class="remote-btn p-2 bg-gradient-to-br from-green-600 to-green-800 rounded-lg shadow-lg hover:from-green-500 text-white text-sm">
+                        <i class="mdi mdi-keyboard-return"></i>
+                        Enter
+                    </button>
+                    <button @click="sendSpecialKey('KEYCODE_SPACE')"
+                        class="remote-btn p-2 bg-gradient-to-br from-blue-600 to-blue-800 rounded-lg shadow-lg hover:from-blue-500 text-white text-sm">
+                        <i class="mdi mdi-keyboard-space"></i>
+                        Space
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Floating Install Button -->
+        <button v-if="showInstallButton" @click="installApp"
+            class="fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-br from-blue-600 to-blue-800 rounded-full shadow-2xl hover:from-blue-500 text-white flex items-center justify-center z-50 animate-bounce">
+            <i class="mdi mdi-download text-2xl"></i>
+        </button>
+
+        <!-- PWA Help Message -->
+        <div v-if="showPwaHelp && !showInstallButton" class="fixed bottom-6 left-6 right-6 flex justify-center z-40">
+            <div
+                class="glass px-4 py-2 rounded-full text-[10px] text-gray-400 border border-gray-700 flex items-center gap-2">
+                <i class="mdi mdi-information-outline"></i>
+                {{ pwaHelpMessage }}
+            </div>
+        </div>
+
+        <!-- Toast Notifications -->
+        <div v-if="errorMessage" class="fixed bottom-4 left-4 right-4 z-50 max-w-md mx-auto">
+            <div class="glass rounded-xl p-4 shadow-2xl bg-red-900 bg-opacity-20 border-red-500">
+                <div class="flex items-center gap-3">
+                    <i class="mdi mdi-alert-circle text-red-400 text-2xl"></i>
+                    <div class="flex-1 text-white">{{ errorMessage }}</div>
+                    <button @click="errorMessage = ''" class="text-red-400 hover:text-red-300">
+                        <i class="mdi mdi-close"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Update Notification -->
+        <div v-if="updateAvailable" class="fixed bottom-24 left-4 right-4 z-50 max-w-md mx-auto">
+            <div class="glass rounded-xl p-4 shadow-2xl bg-blue-900 bg-opacity-40 border-blue-500 border">
+                <div class="flex items-center gap-3">
+                    <i class="mdi mdi-update text-blue-400 text-2xl"></i>
+                    <div class="flex-1 text-white">
+                        <p class="font-bold">Update Available</p>
+                        <p class="text-xs text-blue-100">Refresh to get latest changes</p>
+                    </div>
+                    <button @click="refreshApp"
+                        class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg font-bold">
+                        Refresh
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load Vue App -->
+    <script src="app.js"></script>
+</body>
+
+</html>

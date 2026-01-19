@@ -1,0 +1,43 @@
+{
+    "name": "droidtv-remote",
+    "short_name": "DroidRemote",
+    "description": "Control your Android TV from your phone or browser",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#0f172a",
+    "theme_color": "#0f172a",
+    "orientation": "portrait",
+    "icons": [
+        {
+            "src": "icon.svg",
+            "sizes": "192x192",
+            "type": "image/svg+xml",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "icon.svg",
+            "sizes": "512x512",
+            "type": "image/svg+xml",
+            "purpose": "any maskable"
+        }
+    ],
+    "categories": [
+        "entertainment",
+        "utilities"
+    ],
+    "screenshots": [],
+    "shortcuts": [
+        {
+            "name": "Open Remote",
+            "short_name": "Remote",
+            "description": "Open the TV remote control",
+            "url": ".",
+            "icons": [
+                {
+                    "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='white' d='M21,17V8H7V17H21M21,3A2,2 0 0,1 23,5V17A2,2 0 0,1 21,19H7A2,2 0 0,1 5,17V5A2,2 0 0,1 7,3H21M1,7H3V21H17V23H3A2,2 0 0,1 1,21V7M16,11H18V13H16V11M16,9V7H18V9H16M14,9H16V11H14V9Z'/%3E%3C/svg%3E",
+                    "sizes": "96x96"
+                }
+            ]
+        }
+    ]
+}
