@@ -106,7 +106,7 @@ class CustomAndroidTVRemote(AndroidTVRemote):
         # This is a copy of AndroidTVRemote.async_connect but with CustomRemoteProtocol
 
         ssl_context = await self._create_ssl_context()
-        on_con_lost = self._loop.create_future()
+        self.on_con_lost = self._loop.create_future()
         on_remote_started = self._loop.create_future()
 
         try:
@@ -115,7 +115,7 @@ class CustomAndroidTVRemote(AndroidTVRemote):
                 self._remote_message_protocol,
             ) = await self._loop.create_connection(
                 lambda: CustomRemoteProtocol(
-                    on_con_lost,
+                    self.on_con_lost,
                     on_remote_started,
                     self._on_is_on_updated,
                     self._on_current_app_updated,
@@ -134,9 +134,9 @@ class CustomAndroidTVRemote(AndroidTVRemote):
                 raise InvalidAuth("Need to pair") from exc
             raise CannotConnect(f"Couldn't connect to {self.host}:{self._api_port}") from exc
 
-        await asyncio.wait((on_con_lost, on_remote_started), return_when=asyncio.FIRST_COMPLETED)
-        if on_con_lost.done():
-            con_lost_exc = on_con_lost.result()
+        await asyncio.wait((self.on_con_lost, on_remote_started), return_when=asyncio.FIRST_COMPLETED)
+        if self.on_con_lost.done():
+            con_lost_exc = self.on_con_lost.result()
             logger.debug(
                 "Couldn't connect to %s:%s. Error: %s",
                 self.host,
@@ -159,6 +159,64 @@ def load_config():
     except Exception as e:
         logger.error(f"Error loading config: {e}")
         config = {}
+
+
+async def monitor_connection(remote_instance):
+    """Monitor connection health and auto-reconnect"""
+    global tv_remote
+
+    logger.info("Starting connection monitor")
+    try:
+        # Wait for the connection lost future to complete
+        if hasattr(remote_instance, 'on_con_lost'):
+            await remote_instance.on_con_lost
+            logger.warning("Connection lost! Remote instance disconnected.")
+        else:
+            logger.warning("Remote instance missing on_con_lost, monitor aborting")
+            return
+
+    except Exception as e:
+        logger.error(f"Error in connection monitor: {e}")
+
+    # If we are here, the connection is broken.
+
+    # Check if this instance is still the active one
+    if tv_remote is remote_instance:
+        logger.info("Marking global tv_remote as disconnected")
+        tv_remote = None
+
+        # Initiate auto-reconnect
+        logger.info("Attempting auto-reconnect in 5 seconds...")
+        await asyncio.sleep(5)
+
+        retry_count = 0
+        while True:
+            # Check if someone else already connected us
+            if tv_remote is not None:
+                 logger.info("Reconnected by another process, stopping auto-reconnect")
+                 break
+
+            logger.info(f"Auto-reconnect attempt #{retry_count + 1}...")
+
+            # Use force=True to ensure we try even if flags are stuck
+            result = await initialize_tv(force=True)
+
+            if result.get("status") == "connected":
+                logger.info("Auto-reconnect successful!")
+                break
+
+            # Check again if we were successful despite error status (unlikely)
+            if tv_remote is not None:
+                logger.info("Reconnected, stopping loop")
+                break
+
+            retry_count += 1
+            wait_time = min(30, 5 + retry_count * 2) # Backoff up to 30s
+            logger.info(f"Reconnect failed ({result.get('error', 'unknown')}), retrying in {wait_time}s...")
+            await asyncio.sleep(wait_time)
+
+    else:
+        logger.info("Connection monitor finished (instance superseded)")
 
 
 async def initialize_tv(force=False):
@@ -199,6 +257,10 @@ async def initialize_tv(force=False):
             await tv_remote.async_connect()
             logger.info("Successfully connected to Android TV")
             connecting = False
+
+            # Start monitoring this connection
+            asyncio.create_task(monitor_connection(tv_remote))
+
             return {"status": "connected"}
 
         except InvalidAuth:
@@ -228,6 +290,10 @@ async def initialize_tv(force=False):
                     # Now connect again
                     await tv_remote.async_connect()
                     logger.info("Successfully connected to Android TV after pairing")
+
+                    # Start monitoring this connection
+                    asyncio.create_task(monitor_connection(tv_remote))
+
                     return {"status": "connected"}
 
                 except asyncio.TimeoutError:
@@ -298,6 +364,7 @@ async def pairing_code_handler(request):
 
 async def send_key_handler(request):
     """Send key command to TV"""
+    global tv_remote
     data = await request.json()
     key_code = data.get('key')
 
@@ -310,6 +377,7 @@ async def send_key_handler(request):
         return web.json_response({"status": "ok"})
     except ConnectionClosed:
         logger.error(f"Connection closed while sending key: {key_code}")
+        tv_remote = None
         return web.json_response({"error": "Not connected to TV"}, status=400)
     except Exception as e:
         logger.error(f"Error sending key: {e}")
@@ -318,6 +386,7 @@ async def send_key_handler(request):
 
 async def launch_app_handler(request):
     """Launch app on TV"""
+    global tv_remote
     data = await request.json()
     app_id = data.get('app_id')
 
@@ -330,6 +399,7 @@ async def launch_app_handler(request):
         return web.json_response({"status": "ok"})
     except ConnectionClosed:
         logger.error(f"Connection closed while launching app: {app_id}")
+        tv_remote = None
         return web.json_response({"error": "Not connected to TV"}, status=400)
     except Exception as e:
         logger.error(f"Error launching app: {e}")
@@ -338,6 +408,7 @@ async def launch_app_handler(request):
 
 async def send_text_handler(request):
     """Send text input to TV"""
+    global tv_remote
     data = await request.json()
     text = data.get('text', '')
     send_enter = data.get('enter', False)
@@ -366,6 +437,7 @@ async def send_text_handler(request):
         return web.json_response({"status": "ok"})
     except (ConnectionClosed, ConnectionError) as e:
         logger.error(f"Connection lost while sending text: {e}")
+        tv_remote = None
         return web.json_response({"error": "Connection lost"}, status=400)
     except Exception as e:
         logger.exception(f"Unexpected error sending text: {e}")

@@ -24,8 +24,36 @@ createApp({
         const showPwaHelp = ref(false);
         const pwaHelpMessage = ref('');
         const autoEnter = ref(true);
-        // Initialize mute state from localStorage (assume muted by default for safety)
-        const isMuted = ref(localStorage.getItem('tvMuted') === 'true');
+        // Cookie helpers to avoid collisions on subpaths
+        const getCookiePath = () => {
+            let path = window.location.pathname;
+            if (path.split('/').pop().includes('.')) {
+                path = path.substring(0, path.lastIndexOf('/'));
+            }
+            return path.endsWith('/') ? path : path + '/';
+        };
+
+        const setCookie = (name, value, days = 365) => {
+            const d = new Date();
+            d.setTime(d.getTime() + (days * 24 * 60 * 60 * 1000));
+            const expires = "expires=" + d.toUTCString();
+            const path = getCookiePath();
+            document.cookie = name + "=" + value + ";" + expires + ";path=" + path + ";SameSite=Lax";
+        };
+
+        const getCookie = (name) => {
+            const nameEQ = name + "=";
+            const ca = document.cookie.split(';');
+            for (let i = 0; i < ca.length; i++) {
+                let c = ca[i];
+                while (c.charAt(0) == ' ') c = c.substring(1, c.length);
+                if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length, c.length);
+            }
+            return null;
+        };
+
+        // Initialize mute state from cookies (better than localStorage for subfolder scoping)
+        const isMuted = ref(getCookie('tvMuted') === 'true');
 
         let statusCheckInterval = null;
 
@@ -94,7 +122,7 @@ createApp({
             // Track mute state
             if (keyCode === 'KEYCODE_VOLUME_MUTE') {
                 isMuted.value = !isMuted.value;
-                localStorage.setItem('tvMuted', isMuted.value.toString());
+                setCookie('tvMuted', isMuted.value.toString());
                 console.log('Mute state:', isMuted.value);
             }
 
