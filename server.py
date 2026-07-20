@@ -14,6 +14,7 @@ from androidtvremote2 import AndroidTVRemote, ConnectionClosed, CannotConnect, I
 from androidtvremote2.remote import RemoteProtocol, RemoteMessage, Feature
 
 logging.basicConfig(level=logging.INFO)
+logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 # Global state
@@ -537,11 +538,24 @@ async def on_startup(app):
     logger.info("Server started and configuration loaded")
 
 
+async def on_shutdown(app):
+    """Application shutdown handler"""
+    logger.info("Server shutting down, cancelling pending events...")
+    global server_event_futures
+    for future in server_event_futures:
+        if not future.done():
+            future.cancel()
+    server_event_futures.clear()
+
+
 async def on_cleanup(app):
     """Application cleanup handler"""
     global tv_remote
-    if tv_remote:
-        tv_remote.disconnect()
+    if tv_remote and hasattr(tv_remote, 'disconnect'):
+        try:
+            tv_remote.disconnect()
+        except Exception as e:
+            logger.debug(f"Error disconnecting remote: {e}")
     logger.info("Server shutdown complete")
 
 
@@ -573,6 +587,7 @@ def create_app():
 
     # Setup event handlers
     app.on_startup.append(on_startup)
+    app.on_shutdown.append(on_shutdown)
     app.on_cleanup.append(on_cleanup)
 
     return app
@@ -583,4 +598,4 @@ if __name__ == '__main__':
     app = create_app()
     port = config.get('server_port', 7503)
     logger.info(f"Starting droidtv-remote server on http://0.0.0.0:{port}")
-    web.run_app(app, host='0.0.0.0', port=port)
+    web.run_app(app, host='0.0.0.0', port=port, shutdown_timeout=1.0)

@@ -1,6 +1,5 @@
 services:
   droidtv-remote:
-    build: .
     container_name: droidtv-remote
     image: vm75/droidtv-remote:latest
     restart: unless-stopped

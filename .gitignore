@@ -12,3 +12,6 @@ client_info.txt
 # OS Files
 .DS_Store
 Thumbs.db
+
+# test setup
+test/
