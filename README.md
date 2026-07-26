@@ -28,7 +28,7 @@ A PWA for controlling one or more Android TV devices from a phone or browser.
    ```bash
    python -m venv .venv
    source .venv/bin/activate
-   pip install -r requirements.txt
+   pip install -r server/requirements.txt
    ```
 
 3. Create the runtime configuration:
@@ -41,7 +41,7 @@ A PWA for controlling one or more Android TV devices from a phone or browser.
 4. Start the server and open `http://localhost:7503`:
 
    ```bash
-   python server.py
+   python server/server.py
    ```
 
 The server listens on all interfaces, so another device on the LAN can use `http://<server-ip>:7503`.
@@ -121,25 +121,25 @@ docker pull vm75/droidtv-remote:latest
 docker pull ghcr.io/vm75/droidtv-remote:latest
 ```
 
-Run with host networking and mount `/app/data` persistently so the container can reach LAN TVs and retain all pairings. The server port can be customized at runtime with `-e SERVER_PORT=7503` or at build time with `--build-arg SERVER_PORT=7503` in `Containerfile`. The included Compose files are examples.
+Run with host networking and mount `/app/data` persistently so the container can reach LAN TVs and retain all pairings. The server port can be customized at runtime with `-e SERVER_PORT=7503` or at build time with `--build-arg SERVER_PORT=7503` in `deploy/Containerfile`. The included Compose files are examples.
 
 ```bash
-docker compose up -d
+docker compose -f deploy/compose.yml up -d
 ```
 
 ## Reverse proxy subpaths
 
-The API and PWA use relative URLs, and the server middleware accepts a stripped or retained subpath. Use `nginx_subfolder.example` as a starting point and serve the application over HTTPS for reliable PWA installation.
+The API and PWA use relative URLs, and the server middleware accepts a stripped or retained subpath. Use `deploy/nginx_subfolder.example` as a starting point and serve the application over HTTPS for reliable PWA installation.
 
 ## Development and verification
 
 ```bash
-python -m py_compile server.py
-node --check static/app.js
-node --check static/sw.js
+python -m py_compile server/server.py
+node --check client/app.js
+node --check client/sw.js
 node tests/test_app.js
 python -m unittest discover -s tests -v
-python server.py
+python server/server.py
 ```
 
 When TVs are available, manually verify adding/pairing more than one TV, switching command targets, automatic connection after opening the PWA, launcher add/edit/delete and icon upload, per-TV launcher filtering, reconnection after a TV restart, forgetting and re-pairing, IME events, and installation under the intended reverse-proxy path.
@@ -156,7 +156,7 @@ The root `VERSION` value is shown in the PWA and returned by `/api/status`. It f
 - Minor: bug fixes and minor feature additions.
 - Major: large, breaking, or incompatible changes.
 
-When changing `VERSION`, update `static/sw.js` at the same time so its cache is exactly `droidtv-remote-v<version>`. This forces installed PWAs to refresh cached assets. The version-sync test catches mismatches, and release automation publishes tagged container images.
+When changing `VERSION`, update `client/sw.js` at the same time so its cache is exactly `droidtv-remote-v<version>`. This forces installed PWAs to refresh cached assets. The version-sync test catches mismatches, and release automation publishes tagged container images.
 
 ## License
 

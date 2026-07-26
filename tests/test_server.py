@@ -1,13 +1,16 @@
 import asyncio
 import base64
 import json
-from pathlib import Path
+import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from aiohttp import FormData, web
 from aiohttp.test_utils import TestClient, TestServer
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "server"))
 
 import server
 

@@ -3,7 +3,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install dependencies
-COPY requirements.txt .
+COPY server/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Create data directory
@@ -11,10 +11,10 @@ RUN mkdir -p data
 
 # Copy application files
 COPY VERSION .
-COPY server.py .
+COPY server/server.py ./server/
 # We don't copy certificates because they will be generated if missing,
 # but it's better to mount them as a volume to persist pairing.
-COPY static/ ./static/
+COPY client/ ./client/
 
 # Configure server port
 ARG SERVER_PORT=7503
@@ -24,4 +24,4 @@ ENV SERVER_PORT=${SERVER_PORT}
 EXPOSE ${SERVER_PORT}
 
 # Run the server
-CMD ["python", "server.py"]
+CMD ["python", "server/server.py"]

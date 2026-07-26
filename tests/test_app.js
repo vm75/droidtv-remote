@@ -132,7 +132,7 @@ async function flushPromises() {
     }
 }
 
-require('../static/app.js');
+require('../client/app.js');
 assert.equal(mountedCallbacks.length, 1);
 mountedCallbacks[0]();
 

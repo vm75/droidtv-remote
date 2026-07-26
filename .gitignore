@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 venv/
+.venv/
 .env
 
 # Configuration & Secrets
@@ -14,7 +15,7 @@ client_info.txt
 Thumbs.db
 
 # test setup
-compose.yml
+deploy/compose.yml
 test/
 
 # log files

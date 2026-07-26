@@ -2,16 +2,16 @@
 
 # Podman Compose targets
 build:
-	podman build -t vm75/droidtv-remote:latest .
+	podman build -f deploy/Containerfile -t vm75/droidtv-remote:latest .
 
 run:
-	podman compose up -d
+	podman compose -f deploy/compose.yml up -d
 
 start:
-	podman compose start
+	podman compose -f deploy/compose.yml start
 
 stop:
-	podman compose stop
+	podman compose -f deploy/compose.yml stop
 
 clean:
-	podman compose down
+	podman compose -f deploy/compose.yml down

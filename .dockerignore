@@ -1,7 +1,9 @@
 .git
 .venv
 __pycache__
+**/__pycache__
 *.pyc
+*.pyo
 .gitignore
 README.md
 LICENSE

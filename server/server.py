@@ -23,12 +23,15 @@ logging.basicConfig(level=logging.INFO)
 logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
+# Base directory (project root)
+BASE_DIR = Path(__file__).resolve().parent.parent
+
 # Global state
 config = {}
-TV_REGISTRY_PATH = Path(__file__).parent / "data" / "tvs.yaml"
-TV_DATA_DIR = Path(__file__).parent / "data" / "tvs"
-APP_REGISTRY_PATH = Path(__file__).parent / "data" / "apps.yaml"
-ICON_DATA_DIR = Path(__file__).parent / "data" / "icons"
+TV_REGISTRY_PATH = BASE_DIR / "data" / "tvs.yaml"
+TV_DATA_DIR = BASE_DIR / "data" / "tvs"
+APP_REGISTRY_PATH = BASE_DIR / "data" / "apps.yaml"
+ICON_DATA_DIR = BASE_DIR / "data" / "icons"
 MAX_ICON_BYTES = 2 * 1024 * 1024
 ALLOWED_ICON_TYPES = {
     "image/png": "png",
@@ -55,7 +58,7 @@ tv_states: Dict[str, TVState] = {}
 
 # Read version
 try:
-    with open(Path(__file__).parent / "VERSION", "r") as f:
+    with open(BASE_DIR / "VERSION", "r") as f:
         __version__ = f.read().strip()
 except Exception:
     __version__ = "unknown"
@@ -210,7 +213,7 @@ class CustomAndroidTVRemote(AndroidTVRemote):
 def load_config():
     """Load configuration from config.yaml"""
     global config
-    config_path = Path(__file__).parent / "data" / "config.yaml"
+    config_path = BASE_DIR / "data" / "config.yaml"
     try:
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f) or {}
@@ -1101,7 +1104,7 @@ async def on_cleanup(app):
 
 async def index_handler(request):
     """Serve the index.html file"""
-    index_file = Path(__file__).parent / 'static' / 'index.html'
+    index_file = BASE_DIR / 'client' / 'index.html'
     return web.FileResponse(index_file)
 
 
@@ -1135,7 +1138,7 @@ def create_app():
     # Static files at the ROOT
     ICON_DATA_DIR.mkdir(parents=True, exist_ok=True)
     app.router.add_static('/icons/', ICON_DATA_DIR.resolve(), name='icons', show_index=True)
-    app.router.add_static('/', (Path(__file__).parent / 'static').resolve(), name='static', show_index=True)
+    app.router.add_static('/', (BASE_DIR / 'client').resolve(), name='static', show_index=True)
 
     # Setup event handlers
     app.on_startup.append(on_startup)
