@@ -1,6 +1,19 @@
+<div align="center">
+
 # 📺 droidtv-remote
 
-A PWA for controlling one or more Android TV devices from a phone or browser.
+**A modern Progressive Web App (PWA) for seamlessly controlling multiple Android TV devices from any phone, tablet, or browser.**
+
+[![Docker Publish](https://github.com/vm75/droidtv-remote/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/vm75/droidtv-remote/actions/workflows/docker-publish.yml)
+[![Docker Pulls](https://img.shields.io/docker/pulls/vm75/droidtv-remote)](https://hub.docker.com/r/vm75/droidtv-remote)
+[![Docker Image Version](https://img.shields.io/docker/v/vm75/droidtv-remote?sort=semver)](https://hub.docker.com/r/vm75/droidtv-remote)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Platforms](https://img.shields.io/badge/platform-amd64%20%7C%20arm64-blue)](#docker)
+
+[Features](#features) • [Installation](#installation) • [Docker](#docker) • [Docker Hub](https://hub.docker.com/r/vm75/droidtv-remote) • [GHCR](https://github.com/vm75/droidtv-remote/pkgs/container/droidtv-remote)
+
+---
+</div>
 
 ## Features
 

@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-`server/server.py` contains the aiohttp backend, per-TV connection state, TV registry APIs, and static-file serving. Backend dependencies are listed in `server/requirements.txt`. Browser and PWA assets live in `client/`. Deployment configurations (`Containerfile`, `compose.yml.sample`, `nginx_subfolder.example`) live in `deploy/`. Tests live in `tests/`. Runtime settings use `data/config.yaml`; PWA-managed records use `data/tvs.yaml` and `data/apps.yaml`, uploaded launcher icons use `data/icons/`, and generated credentials live under `data/tvs/<tv-id>/`. Begin with `config.yaml.example`. The `VERSION` file stores the current project version, which is read by `server/server.py` and passed to the UI.
+`server/server.py` contains the aiohttp backend, per-TV connection state, TV registry APIs, and static-file serving. Backend dependencies are listed in `server/requirements.txt`. Browser and PWA assets live in `client/`. Deployment configurations (`Containerfile`, `compose.yml.sample`, `nginx_subfolder.example`) live in `deploy/`. Tests live in `tests/`. Runtime settings use `data/config.yaml`; PWA-managed records use `data/tvs.yaml` and `data/apps.yaml`, uploaded launcher icons use `data/icons/`, and generated credentials live under `data/tvs/<tv-id>/`. Begin with `config.yaml.example`. The `VERSION` file stores the current project version, which is read by `server/server.py` and passed to the UI. Root documentation files (`README.md`, `DOCKERHUB.md`, `AGENTS.md`) document the system and repository workflows.
 
 ## Build, Test, and Development Commands
 
@@ -22,7 +22,7 @@ Use four-space indentation and PEP 8 conventions in Python: `snake_case` for fun
 
 ## Agent-Specific Instructions
 
-Apply KISS and YAGNI to every change. Prefer the smallest clear implementation that solves the current requirement and follows existing patterns. Avoid new abstractions, dependencies, speculative options, compatibility layers, or refactors for hypothetical needs. Explain unavoidable complexity in the pull request. ALWAYS update documentation (`README.md`, `AGENTS.md`, and any other relevant markdown files) after making any updates or changes to the project.
+Apply KISS and YAGNI to every change. Prefer the smallest clear implementation that solves the current requirement and follows existing patterns. Avoid new abstractions, dependencies, speculative options, compatibility layers, or refactors for hypothetical needs. Explain unavoidable complexity in the pull request. ALWAYS update documentation (`README.md`, `DOCKERHUB.md`, `AGENTS.md`, and any other relevant markdown files) after making any updates or changes to the project. Keep `DOCKERHUB.md` synchronized with `README.md` whenever features, configuration, or deployment instructions change.
 
 ## Testing Guidelines
 
