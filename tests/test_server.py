@@ -386,6 +386,32 @@ class MultiTvServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.response_json(response)["status"], "connecting")
         connect_mock.assert_awaited_once_with("living")
 
+    def test_get_server_port_priority(self):
+        # Default with empty config and no env vars
+        with patch.dict("os.environ", {}, clear=True):
+            server.config = {}
+            self.assertEqual(server.get_server_port(), 7503)
+
+        # Config file port
+        with patch.dict("os.environ", {}, clear=True):
+            server.config = {"server_port": 8080}
+            self.assertEqual(server.get_server_port(), 8080)
+
+        # Environment variable overrides config
+        with patch.dict("os.environ", {"SERVER_PORT": "9000"}, clear=True):
+            server.config = {"server_port": 8080}
+            self.assertEqual(server.get_server_port(), 9000)
+
+        # PORT environment variable fallback
+        with patch.dict("os.environ", {"PORT": "9001"}, clear=True):
+            server.config = {"server_port": 8080}
+            self.assertEqual(server.get_server_port(), 9001)
+
+        # Fallback to default when invalid port provided
+        with patch.dict("os.environ", {"SERVER_PORT": "invalid"}, clear=True):
+            server.config = {}
+            self.assertEqual(server.get_server_port(), 7503)
+
 
 if __name__ == "__main__":
     unittest.main()

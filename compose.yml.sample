@@ -10,3 +10,4 @@ services:
       - ./data:/app/data
     environment:
       - PYTHONUNBUFFERED=1
+      - SERVER_PORT=7503

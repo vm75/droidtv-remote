@@ -7,6 +7,7 @@ import asyncio
 from dataclasses import dataclass
 import hashlib
 import logging
+import os
 import re
 import secrets
 import shutil
@@ -1144,9 +1145,24 @@ def create_app():
     return app
 
 
+def get_server_port() -> int:
+    """Get server port from SERVER_PORT or PORT env var, config, or default to 7503."""
+    env_port = os.environ.get('SERVER_PORT') or os.environ.get('PORT')
+    if env_port:
+        try:
+            return int(env_port)
+        except ValueError:
+            pass
+    try:
+        return int(config.get('server_port', 7503))
+    except (ValueError, TypeError):
+        return 7503
+
+
 if __name__ == '__main__':
     load_config()
     app = create_app()
-    port = config.get('server_port', 7503)
+    port = get_server_port()
     logger.info(f"Starting droidtv-remote server on http://0.0.0.0:{port}")
     web.run_app(app, host='0.0.0.0', port=port, shutdown_timeout=1.0)
+

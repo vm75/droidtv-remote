@@ -93,7 +93,7 @@ Preserve the entire `data/` directory across upgrades. Do not commit it: TV addr
 server_port: 7503
 ```
 
-Legacy `apps`, `tv_ip`, and `tv_name` entries remain supported only for one-time migration.
+You can also configure the port via the `SERVER_PORT` (or `PORT`) environment variable or `SERVER_PORT` build argument in `Containerfile`. Environment variables override `data/config.yaml`.
 
 ### Finding a TV address
 
@@ -121,7 +121,7 @@ docker pull vm75/droidtv-remote:latest
 docker pull ghcr.io/vm75/droidtv-remote:latest
 ```
 
-Run with host networking and mount `/app/data` persistently so the container can reach LAN TVs and retain all pairings. The included Compose files are examples.
+Run with host networking and mount `/app/data` persistently so the container can reach LAN TVs and retain all pairings. The server port can be customized at runtime with `-e SERVER_PORT=7503` or at build time with `--build-arg SERVER_PORT=7503` in `Containerfile`. The included Compose files are examples.
 
 ```bash
 docker compose up -d

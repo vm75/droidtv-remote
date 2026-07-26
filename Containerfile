@@ -16,8 +16,12 @@ COPY server.py .
 # but it's better to mount them as a volume to persist pairing.
 COPY static/ ./static/
 
+# Configure server port
+ARG SERVER_PORT=7503
+ENV SERVER_PORT=${SERVER_PORT}
+
 # Expose the server port
-EXPOSE 7503
+EXPOSE ${SERVER_PORT}
 
 # Run the server
 CMD ["python", "server.py"]
