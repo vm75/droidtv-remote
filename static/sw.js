@@ -1,4 +1,4 @@
-const CACHE_NAME = 'droidtv-remote-v4';
+const CACHE_NAME = 'droidtv-remote-v0.2.0';
 const ASSETS = [
     './',
     'index.html',

@@ -2,16 +2,19 @@
 
 ## Project Structure & Module Organization
 
-`server.py` contains the aiohttp backend, TV connection logic, API handlers, and static-file serving. Browser and PWA assets live in `static/`. Runtime configuration and generated pairing certificates belong under `data/`; begin with `config.yaml.example`. Deployment files include `Dockerfile`, `docker-compose.yml`, and `nginx_subfolder.example`. The `VERSION` file stores the current project version, which is read by `server.py` and passed to the UI.
+`server.py` contains the aiohttp backend, per-TV connection state, TV registry APIs, and static-file serving. Browser and PWA assets live in `static/`. Tests live in `tests/`. Runtime settings use `data/config.yaml`; PWA-managed records use `data/tvs.yaml` and `data/apps.yaml`, uploaded launcher icons use `data/icons/`, and generated credentials live under `data/tvs/<tv-id>/`. Begin with `config.yaml.example`. Deployment files include `Dockerfile`, `docker-compose.yml`, and `nginx_subfolder.example`. The `VERSION` file stores the current project version, which is read by `server.py` and passed to the UI.
 
 ## Build, Test, and Development Commands
 
 - `python -m venv .venv && source .venv/bin/activate` creates an isolated Python environment.
 - `pip install -r requirements.txt` installs aiohttp, androidtvremote2, and PyYAML.
-- `mkdir -p data && cp config.yaml.example data/config.yaml` creates a local configuration; update `tv_ip` before connecting.
+- `mkdir -p data && cp config.yaml.example data/config.yaml` creates a local configuration; add and pair TVs from the PWA.
 - `python server.py` starts the service on port 7503.
 - `docker compose up --build` builds and runs the container with host networking and persistent `data/` storage.
 - `python -m py_compile server.py` performs a quick backend syntax check.
+- `python -m unittest discover -s tests -v` runs the automated backend tests.
+- `node --check static/app.js && node --check static/sw.js` checks PWA script syntax.
+- `node tests/test_app.js` checks remembered TV selection and automatic connection behavior.
 
 ## Coding Style & Naming Conventions
 
@@ -23,7 +26,7 @@ Apply KISS and YAGNI to every change. Prefer the smallest clear implementation t
 
 ## Testing Guidelines
 
-There is no automated test suite yet. Run the syntax check and start the server. Manually verify `/api/status`, pairing, key commands, and app launching against a TV when available. Test frontend changes in a browser and installed PWA, including reverse-proxy subpaths. Put new tests in `tests/` and name Python files `test_*.py`.
+Run the automated tests, syntax checks, and start the server. Manually verify `/api/status`, multi-TV pairing and switching, launcher CRUD and icon upload, per-TV launcher availability, automatic connection, forgetting/re-pairing, key commands, and app launching against TVs when available. Test frontend changes in a browser and installed PWA, including reverse-proxy subpaths. Put new tests in `tests/` and name Python files `test_*.py`.
 
 ## Commit & Pull Request Guidelines
 
@@ -31,4 +34,10 @@ Recent commits use short, imperative, lowercase summaries such as `fixed keyboar
 
 ## Security & Configuration Tips
 
-Do not commit `data/config.yaml`, `cert.pem`, `key.pem`, TV addresses, or pairing codes. Treat generated certificates as secrets and preserve the mounted `data/` directory across container upgrades.
+Do not commit `data/config.yaml`, `data/tvs.yaml`, `data/apps.yaml`, uploaded `data/icons/`, any `cert.pem` or `key.pem`, TV addresses, or pairing codes. Treat per-TV generated certificates as secrets and preserve the mounted `data/` directory across container upgrades.
+
+## Versioning
+
+Use semantic versioning in the root `VERSION` file (`MAJOR.MINOR.PATCH`). Use a patch bump for PWA-only changes such as UI, copy, styling, or cache-only updates. Use a minor bump for bug fixes and minor feature additions. Use a major bump for large, breaking, or incompatible changes.
+
+For every version bump, update `static/sw.js` so `CACHE_NAME` is exactly `droidtv-remote-v<version>` using the same value from `VERSION`. This invalidates stale PWA assets while keeping the service-worker cache tied to the release. Run the backend tests, PWA tests, syntax checks, and version-sync test before committing.

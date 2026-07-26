@@ -102,43 +102,96 @@
     <div id="app">
         <!-- Header -->
         <header class="glass sticky top-0 z-50 px-4 py-3 shadow-lg">
-            <div class="max-w-md mx-auto flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                    <span class="text-3xl">📺</span>
-                    <div>
-                        <h1 class="text-xl font-bold text-white">{{ tvName }}</h1>
-                        <p class="text-xs text-gray-400">Remote Control <span v-if="version" class="opacity-50">v{{ version }}</span></p>
-                    </div>
-                </div>
-                <div class="flex items-center gap-2">
-                    <!-- Power Button -->
-                    <button @click="sendKey('KEYCODE_POWER')"
-                        class="remote-btn w-9 h-9 bg-gradient-to-br from-red-600 to-red-800 rounded-full shadow-lg hover:from-red-500 text-white flex items-center justify-center">
-                        <i class="mdi mdi-power text-lg"></i>
+            <div class="max-w-md mx-auto flex items-center justify-between gap-3">
+                <!-- TV selector and connection status -->
+                <div v-if="currentView === 'remote'" class="relative flex-1 min-w-0">
+                    <button @click="toggleTvMenu"
+                        class="w-full flex items-center gap-3 text-left rounded-xl p-1 -m-1 hover:bg-white hover:bg-opacity-5"
+                        :aria-expanded="showTvMenu" aria-haspopup="menu">
+                        <span class="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center flex-shrink-0">
+                            <i :class="['mdi', connectionIcon, connectionIconClass, 'text-2xl']"></i>
+                        </span>
+                        <span class="min-w-0 flex-1">
+                            <span class="block text-lg font-bold text-white truncate">{{ tvName }}</span>
+                            <span class="block text-xs" :class="connectionIconClass">
+                                {{ connectionLabel }} <span v-if="version" class="text-gray-500">· v{{ version }}</span>
+                            </span>
+                        </span>
+                        <i class="mdi mdi-chevron-down text-gray-400 text-xl"
+                            :class="{'rotate-180': showTvMenu}"></i>
                     </button>
 
-                    <div v-if="connectionStatus" class="flex items-center gap-2 text-green-400 text-sm"
-                        :class="{'pulse-glow': !connectionStatus}">
-                        <span class="w-2 h-2 rounded-full bg-green-400"></span>
-                        <span>Connected</span>
-                    </div>
-                    <div v-else class="flex items-center gap-2">
-                        <div class="flex items-center gap-2 text-orange-400 text-sm">
-                            <span class="w-2 h-2 rounded-full bg-orange-400 pulse-glow"></span>
-                            <span>{{ pairingInProgress ? 'Pairing...' : (connecting ? 'Connecting...' : 'Disconnected')
-                                }}</span>
+                    <div v-if="showTvMenu" role="menu"
+                        class="absolute left-0 top-full mt-3 w-72 max-w-[calc(100vw-2rem)] glass bg-slate-900 rounded-2xl shadow-2xl overflow-hidden border border-slate-700">
+                        <div class="px-4 py-3 border-b border-slate-700">
+                            <p class="text-xs font-semibold uppercase tracking-wider text-gray-400">Choose a TV</p>
                         </div>
-                        <button @click="connectToTV"
-                            class="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded-lg font-semibold shadow-md active:scale-95 transition-transform">
-                            {{ connecting ? 'Retry' : 'Connect' }}
-                        </button>
+                        <div v-if="tvs.length" class="max-h-64 overflow-y-auto hide-scrollbar py-1">
+                            <div v-for="tv in tvs" :key="tv.id"
+                                class="flex items-center hover:bg-slate-800"
+                                :class="{'bg-blue-900 bg-opacity-20': tv.id === selectedTvId}">
+                                <button @click="selectTv(tv.id)" role="menuitem"
+                                    class="flex-1 min-w-0 flex items-center gap-3 px-4 py-3 text-left">
+                                    <i class="mdi text-xl"
+                                        :class="[
+                                            tv.connected ? 'mdi-television-classic text-green-400' :
+                                                ((tv.connecting || tv.pairing_in_progress) ? 'mdi-loading mdi-spin text-orange-400' : 'mdi-television-off text-gray-500')
+                                        ]"></i>
+                                    <span class="min-w-0">
+                                        <span class="block text-sm font-semibold text-white truncate">{{ tv.name }}</span>
+                                        <span class="block text-xs text-gray-500 truncate">{{ tv.host }}</span>
+                                    </span>
+                                </button>
+                                <button @click.stop="forgetTv(tv)" :aria-label="`Forget ${tv.name}`"
+                                    class="w-11 h-11 mr-1 rounded-full text-gray-500 hover:text-red-400 hover:bg-red-950 flex items-center justify-center">
+                                    <i class="mdi mdi-delete-outline text-lg"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <p v-else class="px-4 py-5 text-sm text-gray-400 text-center">No TVs paired yet</p>
+                        <div class="border-t border-slate-700 p-2 flex gap-2">
+                            <button @click="openAddTv"
+                                class="flex-1 px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold flex items-center justify-center gap-2">
+                                <i class="mdi mdi-plus"></i> Add TV
+                            </button>
+                            <button v-if="selectedTv && !connectionStatus" @click="showTvMenu = false; connectToTV()"
+                                class="px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-sm"
+                                aria-label="Reconnect selected TV">
+                                <i class="mdi mdi-refresh"></i>
+                            </button>
+                        </div>
                     </div>
+                </div>
+
+                <div v-if="currentView === 'remote'" class="flex items-center gap-2">
+                    <button @click="openLauncherView" aria-label="Manage app launchers"
+                        class="remote-btn w-10 h-10 bg-slate-700 hover:bg-slate-600 rounded-full text-white flex items-center justify-center">
+                        <i class="mdi mdi-apps text-xl"></i>
+                    </button>
+                    <button @click="sendKey('KEYCODE_POWER')" :disabled="!connectionStatus"
+                        class="remote-btn w-10 h-10 bg-gradient-to-br from-red-600 to-red-800 rounded-full shadow-lg hover:from-red-500 text-white flex items-center justify-center flex-shrink-0 disabled:opacity-40">
+                        <i class="mdi mdi-power text-xl"></i>
+                    </button>
+                </div>
+                <div v-if="currentView === 'apps'" class="w-full flex items-center gap-3">
+                    <button @click="openRemoteView" aria-label="Back to remote"
+                        class="w-10 h-10 rounded-full bg-slate-800 hover:bg-slate-700 text-white flex items-center justify-center">
+                        <i class="mdi mdi-arrow-left text-xl"></i>
+                    </button>
+                    <div class="flex-1 min-w-0">
+                        <h1 class="text-lg font-bold text-white">App launchers</h1>
+                        <p class="text-xs text-gray-400">Shared library and TV availability</p>
+                    </div>
+                    <button @click="openAddApp" aria-label="Add app launcher"
+                        class="w-10 h-10 rounded-full bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center">
+                        <i class="mdi mdi-plus text-xl"></i>
+                    </button>
                 </div>
             </div>
         </header>
 
         <!-- Main Remote Control -->
-        <main class="max-w-md mx-auto px-4 py-6 pb-24">
+        <main v-if="currentView === 'remote'" class="max-w-md mx-auto px-4 py-6 pb-24">
             <!-- Quick Launch - Single Row with Horizontal Scroll -->
             <div v-if="apps.length &gt; 0" class="mb-6">
                 <div class="flex gap-3 overflow-x-auto hide-scrollbar pb-2">
@@ -328,6 +381,167 @@
                 </div>
             </div>
         </main>
+
+        <!-- App Launcher Management View -->
+        <main v-if="currentView === 'apps'" class="max-w-md mx-auto px-4 py-6 pb-24">
+            <section class="glass rounded-3xl p-5 mb-6 shadow-xl">
+                <div class="flex items-start gap-3 mb-4">
+                    <span class="w-10 h-10 rounded-full bg-blue-950 text-blue-400 flex items-center justify-center flex-shrink-0">
+                        <i class="mdi mdi-television-guide text-xl"></i>
+                    </span>
+                    <div>
+                        <h2 class="text-lg font-bold text-white">Available on TV</h2>
+                        <p class="text-xs text-gray-400">Choose which shared launchers appear on each TV.</p>
+                    </div>
+                </div>
+                <select v-if="tvs.length" :value="configuredTvId" @change="selectConfiguredTv($event.target.value)"
+                    class="w-full px-4 py-3 mb-4 bg-slate-800 text-white rounded-xl border border-slate-600 focus:border-blue-400 focus:outline-none">
+                    <option v-for="tv in tvs" :key="tv.id" :value="tv.id">{{ tv.name }}</option>
+                </select>
+                <div v-if="configuredTvId && allApps.length" class="space-y-2 max-h-64 overflow-y-auto hide-scrollbar mb-4">
+                    <label v-for="app in allApps" :key="app.id"
+                        class="flex items-center gap-3 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 cursor-pointer">
+                        <input v-model="configuredAppIds" type="checkbox" :value="app.id"
+                            class="w-5 h-5 accent-blue-600">
+                        <span class="w-9 h-9 rounded-lg bg-slate-900 flex items-center justify-center overflow-hidden flex-shrink-0">
+                            <img v-if="app.icon && app.icon.includes('.')" :src="app.icon" :alt="app.name"
+                                class="w-full h-full object-contain">
+                            <i v-else-if="app.icon" :class="['mdi', app.icon, 'text-xl', 'text-white']"></i>
+                            <span v-else class="text-[10px] font-bold text-gray-300">{{ app.name.slice(0, 2).toUpperCase() }}</span>
+                        </span>
+                        <span class="text-sm text-white truncate">{{ app.name }}</span>
+                    </label>
+                </div>
+                <p v-else-if="!tvs.length" class="text-sm text-gray-400 text-center py-4">Add a TV before configuring availability.</p>
+                <p v-else-if="!allApps.length" class="text-sm text-gray-400 text-center py-4">Add a launcher to configure it.</p>
+                <button v-if="configuredTvId" @click="saveTvAppConfiguration" :disabled="savingTvApps"
+                    class="w-full px-4 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-semibold disabled:opacity-50">
+                    <i v-if="savingTvApps" class="mdi mdi-loading mdi-spin mr-1"></i>
+                    {{ savingTvApps ? 'Saving...' : 'Save TV apps' }}
+                </button>
+            </section>
+
+            <section>
+                <div class="flex items-center justify-between mb-3 px-1">
+                    <div>
+                        <h2 class="text-lg font-bold text-white">Shared launchers</h2>
+                        <p class="text-xs text-gray-400">Edits apply to every TV.</p>
+                    </div>
+                    <button @click="openAddApp"
+                        class="px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold rounded-xl flex items-center gap-1">
+                        <i class="mdi mdi-plus"></i> Add
+                    </button>
+                </div>
+                <div v-if="allApps.length" class="space-y-3">
+                    <article v-for="app in allApps" :key="app.id"
+                        class="glass rounded-2xl p-4 flex items-center gap-4 shadow-lg">
+                        <span class="w-14 h-14 rounded-xl bg-slate-800 flex items-center justify-center overflow-hidden flex-shrink-0">
+                            <img v-if="app.icon && app.icon.includes('.')" :src="app.icon" :alt="app.name"
+                                class="w-full h-full object-contain">
+                            <i v-else-if="app.icon" :class="['mdi', app.icon, 'text-3xl', 'text-white']"></i>
+                            <span v-else class="text-sm font-bold text-gray-300">{{ app.name.slice(0, 2).toUpperCase() }}</span>
+                        </span>
+                        <div class="flex-1 min-w-0">
+                            <h3 class="text-white font-semibold truncate">{{ app.name }}</h3>
+                            <p class="text-xs text-gray-500 truncate">{{ app.package_id }}</p>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <button @click="openEditApp(app)" :aria-label="`Edit ${app.name}`"
+                                class="w-10 h-10 rounded-full text-gray-300 hover:text-white hover:bg-slate-700 flex items-center justify-center">
+                                <i class="mdi mdi-pencil-outline"></i>
+                            </button>
+                            <button @click="deleteApp(app)" :aria-label="`Delete ${app.name}`"
+                                class="w-10 h-10 rounded-full text-gray-400 hover:text-red-400 hover:bg-red-950 flex items-center justify-center">
+                                <i class="mdi mdi-delete-outline"></i>
+                            </button>
+                        </div>
+                    </article>
+                </div>
+                <div v-else class="glass rounded-2xl px-5 py-10 text-center">
+                    <i class="mdi mdi-apps text-4xl text-gray-600"></i>
+                    <p class="text-gray-400 mt-2">No app launchers yet.</p>
+                    <button @click="openAddApp" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-xl">Add launcher</button>
+                </div>
+            </section>
+        </main>
+
+        <!-- App Launcher Modal -->
+        <div v-if="showAppModal"
+            class="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 px-4"
+            @click.self="showAppModal = false">
+            <form @submit.prevent="saveApp" class="glass rounded-3xl p-7 max-w-sm w-full shadow-2xl">
+                <h2 class="text-2xl font-bold text-white mb-1 text-center">
+                    {{ editingAppId ? 'Edit launcher' : 'Add launcher' }}
+                </h2>
+                <p class="text-sm text-gray-400 text-center mb-6">This launcher is shared by every TV.</p>
+                <label class="block text-sm text-gray-300 mb-2" for="app-name">Name</label>
+                <input id="app-name" v-model="appFormName" type="text" maxlength="100" required
+                    placeholder="Netflix"
+                    class="w-full px-4 py-3 mb-4 bg-slate-800 text-white rounded-xl border border-slate-600 focus:border-blue-400 focus:outline-none">
+                <label class="block text-sm text-gray-300 mb-2" for="app-package">Android package ID</label>
+                <input id="app-package" v-model="appFormPackageId" type="text" maxlength="255" required
+                    placeholder="com.netflix.ninja" autocapitalize="none" autocomplete="off"
+                    class="w-full px-4 py-3 mb-4 bg-slate-800 text-white rounded-xl border border-slate-600 focus:border-blue-400 focus:outline-none">
+                <label class="block text-sm text-gray-300 mb-2" for="app-icon">Upload icon</label>
+                <input id="app-icon" type="file" accept="image/png,image/jpeg,image/webp,image/gif"
+                    @change="handleAppIconChange"
+                    class="block w-full text-sm text-gray-400 mb-2 file:mr-3 file:px-3 file:py-2 file:rounded-lg file:border-0 file:bg-blue-600 file:text-white">
+                <p class="text-xs text-gray-500 mb-4">PNG, JPEG, WebP, or GIF; maximum 2 MB.</p>
+                <label class="block text-sm text-gray-300 mb-2" for="app-icon-class">Material icon class (optional)</label>
+                <input id="app-icon-class" v-model="appFormIconClass" type="text" maxlength="100"
+                    placeholder="mdi-netflix" autocapitalize="none" autocomplete="off"
+                    class="w-full px-4 py-3 mb-4 bg-slate-800 text-white rounded-xl border border-slate-600 focus:border-blue-400 focus:outline-none">
+                <label v-if="editingAppId && editingAppHasUploadedIcon"
+                    class="flex items-center gap-2 text-sm text-gray-300 mb-6 cursor-pointer">
+                    <input v-model="removeAppIcon" type="checkbox" :disabled="Boolean(appIconFile)"
+                        class="w-4 h-4 accent-red-600 disabled:opacity-40">
+                    Remove the uploaded icon
+                </label>
+                <div class="flex gap-3">
+                    <button type="button" @click="showAppModal = false" :disabled="savingApp"
+                        class="flex-1 px-5 py-3 bg-gray-700 text-white rounded-xl hover:bg-gray-600 disabled:opacity-50">Cancel</button>
+                    <button type="submit" :disabled="savingApp"
+                        class="flex-1 px-5 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-500 font-semibold disabled:opacity-50">
+                        <i v-if="savingApp" class="mdi mdi-loading mdi-spin mr-1"></i>
+                        {{ savingApp ? 'Saving...' : 'Save' }}
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Add TV Modal -->
+        <div v-if="showAddTvModal"
+            class="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 px-4"
+            @click.self="showAddTvModal = false">
+            <form @submit.prevent="addTv" class="glass rounded-3xl p-8 max-w-sm w-full shadow-2xl">
+                <h2 class="text-2xl font-bold text-white mb-2 text-center">
+                    <i class="mdi mdi-television-plus text-blue-400"></i>
+                    Add a TV
+                </h2>
+                <p class="text-gray-400 text-sm mb-6 text-center">
+                    Enter the address shown in the TV's network settings. Pairing starts automatically.
+                </p>
+                <label class="block text-sm text-gray-300 mb-2" for="new-tv-name">Name</label>
+                <input id="new-tv-name" v-model="newTvName" type="text" maxlength="100"
+                    placeholder="Living Room TV" autocomplete="off" required
+                    class="w-full px-4 py-3 bg-slate-800 text-white rounded-xl border border-slate-600 focus:border-blue-400 focus:outline-none mb-4">
+                <label class="block text-sm text-gray-300 mb-2" for="new-tv-host">IP address or host name</label>
+                <input id="new-tv-host" v-model="newTvHost" type="text" maxlength="255"
+                    placeholder="192.168.1.100" inputmode="decimal" autocapitalize="none" autocomplete="off" required
+                    class="w-full px-4 py-3 bg-slate-800 text-white rounded-xl border border-slate-600 focus:border-blue-400 focus:outline-none mb-6">
+                <div class="flex gap-3">
+                    <button type="button" @click="showAddTvModal = false" :disabled="addingTv"
+                        class="flex-1 px-5 py-3 bg-gray-700 text-white rounded-xl hover:bg-gray-600 disabled:opacity-50">
+                        Cancel
+                    </button>
+                    <button type="submit" :disabled="addingTv"
+                        class="flex-1 px-5 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-500 font-semibold disabled:opacity-50">
+                        <i v-if="addingTv" class="mdi mdi-loading mdi-spin mr-1"></i>
+                        {{ addingTv ? 'Adding...' : 'Add & Pair' }}
+                    </button>
+                </div>
+            </form>
+        </div>
 
         <!-- Pairing Modal -->
         <div v-if="showPairingModal"

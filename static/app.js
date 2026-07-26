@@ -3,12 +3,20 @@
  * Uses HTTP requests instead of WebSockets for reliability
  */
 
-const { createApp, ref, nextTick, onMounted, onUnmounted } = Vue;
+const { createApp, ref, computed, nextTick, onMounted, onUnmounted } = Vue;
 
 createApp({
     setup() {
         // Reactive state
         const connectionStatus = ref(false);
+        const connecting = ref(false);
+        const tvs = ref([]);
+        const selectedTvId = ref('');
+        const showTvMenu = ref(false);
+        const showAddTvModal = ref(false);
+        const newTvName = ref('');
+        const newTvHost = ref('');
+        const addingTv = ref(false);
         const showPairingModal = ref(false);
         const pairingCode = ref('');
         const pairingInProgress = ref(false);
@@ -25,6 +33,20 @@ createApp({
         const showPwaHelp = ref(false);
         const pwaHelpMessage = ref('');
         const autoEnter = ref(true);
+        const currentView = ref('remote');
+        const allApps = ref([]);
+        const configuredTvId = ref('');
+        const configuredAppIds = ref([]);
+        const savingTvApps = ref(false);
+        const showAppModal = ref(false);
+        const editingAppId = ref('');
+        const appFormName = ref('');
+        const appFormPackageId = ref('');
+        const appFormIconClass = ref('');
+        const appIconFile = ref(null);
+        const editingAppHasUploadedIcon = ref(false);
+        const removeAppIcon = ref(false);
+        const savingApp = ref(false);
         // Cookie helpers to avoid collisions on subpaths
         const getCookiePath = () => {
             let path = window.location.pathname;
@@ -53,64 +75,379 @@ createApp({
             return null;
         };
 
+        const selectedTv = computed(() =>
+            tvs.value.find(tv => tv.id === selectedTvId.value) || null
+        );
+        const connectionIcon = computed(() => {
+            if (connectionStatus.value) return 'mdi-television-classic';
+            if (connecting.value || pairingInProgress.value) return 'mdi-loading mdi-spin';
+            return 'mdi-television-off';
+        });
+        const connectionIconClass = computed(() => {
+            if (connectionStatus.value) return 'text-green-400';
+            if (connecting.value || pairingInProgress.value) return 'text-orange-400';
+            return 'text-gray-400';
+        });
+        const connectionLabel = computed(() => {
+            if (connectionStatus.value) return 'Connected';
+            if (pairingInProgress.value) return 'Pairing';
+            if (connecting.value) return 'Connecting';
+            return 'Disconnected';
+        });
+        const tvStorageKey = `droidtvRemote:selectedTv:${getCookiePath()}`;
+        const getStoredTvId = () => {
+            try {
+                return window.localStorage.getItem(tvStorageKey) || '';
+            } catch (error) {
+                return '';
+            }
+        };
+        const rememberSelectedTv = (tvId) => {
+            try {
+                if (tvId) {
+                    window.localStorage.setItem(tvStorageKey, tvId);
+                } else {
+                    window.localStorage.removeItem(tvStorageKey);
+                }
+            } catch (error) {
+                console.warn('Unable to remember selected TV:', error);
+            }
+        };
+
         // Initialize mute state from cookies (better than localStorage for subfolder scoping)
         const isMuted = ref(getCookie('tvMuted') === 'true');
 
         let statusCheckInterval = null;
+        let statusPollDelay = 0;
+        let serverWasUnavailable = false;
+        const setStatusPolling = (delay) => {
+            if (statusCheckInterval && statusPollDelay === delay) return;
+            if (statusCheckInterval) clearInterval(statusCheckInterval);
+            statusPollDelay = delay;
+            statusCheckInterval = setInterval(checkStatus, delay);
+        };
 
         /**
-         * Check connection status
+         * Refresh the managed TV list and restore this client's selection.
+         */
+        const refreshTvs = async () => {
+            const response = await fetch('api/tvs');
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to load TVs');
+            }
+            tvs.value = data.tvs || [];
+            const currentExists = tvs.value.some(tv => tv.id === selectedTvId.value);
+            const storedTvId = getStoredTvId();
+            const storedExists = tvs.value.some(tv => tv.id === storedTvId);
+            if (!currentExists) {
+                selectedTvId.value = storedExists ? storedTvId : (tvs.value[0]?.id || '');
+            }
+            rememberSelectedTv(selectedTvId.value);
+            tvName.value = selectedTv.value?.name || 'No TV selected';
+            const configuredTvExists = tvs.value.some(tv => tv.id === configuredTvId.value);
+            if (!configuredTvExists) {
+                configuredTvId.value = selectedTvId.value || tvs.value[0]?.id || '';
+            }
+            syncConfiguredApps();
+        };
+
+        /**
+         * Check connection status for the selected TV.
          */
         const checkStatus = async () => {
+            if (!selectedTvId.value) {
+                connectionStatus.value = false;
+                connecting.value = false;
+                pairingInProgress.value = false;
+                tvName.value = 'No TV selected';
+                return;
+            }
             try {
-                const response = await fetch('api/status');
+                const response = await fetch(`api/status?tv_id=${encodeURIComponent(selectedTvId.value)}`);
                 const data = await response.json();
-
-                connectionStatus.value = data.connected;
-                tvName.value = data.tv_name || 'Android TV';
+                const reconnectAfterServerRestart = serverWasUnavailable &&
+                    !data.connected && !data.connecting && !data.pairing_in_progress;
+                serverWasUnavailable = false;
+                connectionStatus.value = Boolean(data.connected);
+                connecting.value = Boolean(data.connecting);
+                pairingInProgress.value = Boolean(data.pairing_in_progress);
+                tvName.value = data.tv_name || selectedTv.value?.name || 'Android TV';
                 apps.value = data.apps || [];
-                if (data.version) {
-                    version.value = data.version;
-                }
+                version.value = data.version || version.value;
 
-                // Show pairing modal if pairing is in progress
+                const tv = tvs.value.find(item => item.id === selectedTvId.value);
+                if (tv) {
+                    tv.connected = connectionStatus.value;
+                    tv.connecting = connecting.value;
+                    tv.pairing_in_progress = pairingInProgress.value;
+                }
                 if (data.pairing_in_progress && !showPairingModal.value) {
                     showPairingModal.value = true;
                     pairingCode.value = '';
-                    pairingInProgress.value = false;
                 }
-
-                // Close pairing modal if connected
                 if (data.connected && showPairingModal.value) {
                     showPairingModal.value = false;
-                    pairingInProgress.value = false;
+                    pairingCode.value = '';
                 }
+                setStatusPolling(
+                    data.connecting || data.pairing_in_progress ? 500 : 2000
+                );
+                if (reconnectAfterServerRestart) connectToTV();
             } catch (error) {
                 console.error('Error checking status:', error);
+                connectionStatus.value = false;
+                connecting.value = false;
+                serverWasUnavailable = true;
             }
         };
 
         /**
-         * Connect to TV
+         * Connect to the selected TV. Called automatically on open and change.
          */
         const connectToTV = async () => {
-            console.log('Connecting to TV...');
+            if (!selectedTvId.value) {
+                showAddTvModal.value = true;
+                return;
+            }
+            connecting.value = true;
             try {
                 const response = await fetch('api/connect', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tv_id: selectedTvId.value })
                 });
                 const data = await response.json();
-                console.log('Connect response:', data);
-
-                // Start checking status more frequently
-                if (statusCheckInterval) {
-                    clearInterval(statusCheckInterval);
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to connect');
                 }
-                statusCheckInterval = setInterval(checkStatus, 500);
+                setStatusPolling(500);
+                await checkStatus();
             } catch (error) {
                 console.error('Error connecting:', error);
-                showError('Failed to connect to server');
+                connecting.value = false;
+                showError(error.message || 'Failed to connect to server');
+            }
+        };
+
+        const selectTv = async (tvId) => {
+            const changed = tvId !== selectedTvId.value;
+            selectedTvId.value = tvId;
+            rememberSelectedTv(tvId);
+            showTvMenu.value = false;
+            showPairingModal.value = false;
+            connectionStatus.value = false;
+            pairingInProgress.value = false;
+            tvName.value = selectedTv.value?.name || 'Android TV';
+            await checkStatus();
+            if (changed || !connectionStatus.value) await connectToTV();
+        };
+
+        const toggleTvMenu = async () => {
+            showTvMenu.value = !showTvMenu.value;
+            if (showTvMenu.value) {
+                try {
+                    await refreshTvs();
+                } catch (error) {
+                    showError('Failed to refresh TV status');
+                }
+            }
+        };
+
+        const openAddTv = () => {
+            showTvMenu.value = false;
+            showAddTvModal.value = true;
+        };
+
+        const addTv = async () => {
+            const name = newTvName.value.trim();
+            const host = newTvHost.value.trim();
+            if (!name || !host) {
+                showError('Enter a name and IP address for the TV');
+                return;
+            }
+            addingTv.value = true;
+            try {
+                const response = await fetch('api/tvs', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, host })
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Failed to add TV');
+                tvs.value.push(data.tv);
+                newTvName.value = '';
+                newTvHost.value = '';
+                showAddTvModal.value = false;
+                await selectTv(data.tv.id);
+            } catch (error) {
+                showError(error.message || 'Failed to add TV');
+            } finally {
+                addingTv.value = false;
+            }
+        };
+
+        const forgetTv = async (tv) => {
+            if (!window.confirm(`Forget ${tv.name}? You will need to pair with it again.`)) return;
+            try {
+                const response = await fetch(`api/tvs/${encodeURIComponent(tv.id)}`, {
+                    method: 'DELETE'
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Failed to forget TV');
+                const forgotSelectedTv = tv.id === selectedTvId.value;
+                if (forgotSelectedTv) selectedTvId.value = '';
+                await refreshTvs();
+                if (forgotSelectedTv && selectedTvId.value) {
+                    await checkStatus();
+                    await connectToTV();
+                }
+            } catch (error) {
+                showError(error.message || 'Failed to forget TV');
+            }
+        };
+
+        const syncConfiguredApps = () => {
+            const tv = tvs.value.find(item => item.id === configuredTvId.value);
+            configuredAppIds.value = tv ? [...(tv.app_ids || [])] : [];
+        };
+
+        const loadApps = async () => {
+            const response = await fetch('api/apps');
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Failed to load app launchers');
+            allApps.value = data.apps || [];
+        };
+
+        const openLauncherView = async () => {
+            currentView.value = 'apps';
+            showTvMenu.value = false;
+            configuredTvId.value = selectedTvId.value || tvs.value[0]?.id || '';
+            try {
+                await Promise.all([loadApps(), refreshTvs()]);
+                syncConfiguredApps();
+            } catch (error) {
+                showError(error.message || 'Failed to load app launchers');
+            }
+        };
+
+        const openRemoteView = () => {
+            currentView.value = 'remote';
+            checkStatus();
+        };
+
+        const selectConfiguredTv = (tvId) => {
+            configuredTvId.value = tvId;
+            syncConfiguredApps();
+        };
+
+        const saveTvAppConfiguration = async () => {
+            if (!configuredTvId.value) return;
+            savingTvApps.value = true;
+            try {
+                const response = await fetch(
+                    `api/tvs/${encodeURIComponent(configuredTvId.value)}/apps`,
+                    {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ app_ids: configuredAppIds.value })
+                    }
+                );
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Failed to save TV apps');
+                const index = tvs.value.findIndex(tv => tv.id === data.tv.id);
+                if (index !== -1) tvs.value[index] = data.tv;
+                if (configuredTvId.value === selectedTvId.value) await checkStatus();
+            } catch (error) {
+                showError(error.message || 'Failed to save TV apps');
+            } finally {
+                savingTvApps.value = false;
+            }
+        };
+
+        const resetAppForm = () => {
+            editingAppId.value = '';
+            appFormName.value = '';
+            appFormPackageId.value = '';
+            appFormIconClass.value = '';
+            appIconFile.value = null;
+            editingAppHasUploadedIcon.value = false;
+            removeAppIcon.value = false;
+        };
+
+        const openAddApp = () => {
+            resetAppForm();
+            showAppModal.value = true;
+        };
+
+        const openEditApp = (app) => {
+            editingAppId.value = app.id;
+            appFormName.value = app.name;
+            appFormPackageId.value = app.package_id;
+            appFormIconClass.value = app.icon_class || (app.has_uploaded_icon ? '' : (app.icon || ''));
+            appIconFile.value = null;
+            editingAppHasUploadedIcon.value = Boolean(app.has_uploaded_icon);
+            removeAppIcon.value = false;
+            showAppModal.value = true;
+        };
+
+        const handleAppIconChange = (event) => {
+            appIconFile.value = event.target.files?.[0] || null;
+            if (appIconFile.value) removeAppIcon.value = false;
+        };
+
+        const saveApp = async () => {
+            const name = appFormName.value.trim();
+            const packageId = appFormPackageId.value.trim();
+            if (!name || !packageId) {
+                showError('Enter an app name and Android package ID');
+                return;
+            }
+            savingApp.value = true;
+            const formData = new FormData();
+            formData.append('name', name);
+            formData.append('package_id', packageId);
+            formData.append('icon_class', appFormIconClass.value.trim());
+            if (appIconFile.value) formData.append('icon_file', appIconFile.value);
+            if (removeAppIcon.value && !appIconFile.value) {
+                formData.append('remove_icon', 'true');
+            }
+            const editing = Boolean(editingAppId.value);
+            const url = editing
+                ? `api/apps/${encodeURIComponent(editingAppId.value)}`
+                : 'api/apps';
+            try {
+                const response = await fetch(url, {
+                    method: editing ? 'PUT' : 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Failed to save app launcher');
+                showAppModal.value = false;
+                resetAppForm();
+                await Promise.all([loadApps(), refreshTvs()]);
+                syncConfiguredApps();
+                if (selectedTvId.value) await checkStatus();
+            } catch (error) {
+                showError(error.message || 'Failed to save app launcher');
+            } finally {
+                savingApp.value = false;
+            }
+        };
+
+        const deleteApp = async (app) => {
+            if (!window.confirm(`Delete ${app.name} from every TV?`)) return;
+            try {
+                const response = await fetch(`api/apps/${encodeURIComponent(app.id)}`, {
+                    method: 'DELETE'
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Failed to delete app launcher');
+                await Promise.all([loadApps(), refreshTvs()]);
+                syncConfiguredApps();
+                if (selectedTvId.value) await checkStatus();
+            } catch (error) {
+                showError(error.message || 'Failed to delete app launcher');
             }
         };
 
@@ -139,7 +476,7 @@ createApp({
                     const homeResponse = await fetch('api/send_key', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ key: 'KEYCODE_HOME' })
+                        body: JSON.stringify({ key: 'KEYCODE_HOME', tv_id: selectedTvId.value })
                     });
 
                     if (!homeResponse.ok) {
@@ -157,7 +494,7 @@ createApp({
                         await fetch('api/send_key', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ key: 'KEYCODE_VOLUME_MUTE' })
+                            body: JSON.stringify({ key: 'KEYCODE_VOLUME_MUTE', tv_id: selectedTvId.value })
                         });
                         console.log('Mute restored after HOME');
                     }
@@ -178,7 +515,7 @@ createApp({
                 const response = await fetch('api/send_key', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ key: keyCode })
+                    body: JSON.stringify({ key: keyCode, tv_id: selectedTvId.value })
                 });
 
                 if (!response.ok) {
@@ -210,7 +547,7 @@ createApp({
                 const response = await fetch('api/launch_app', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ app_id: appId })
+                    body: JSON.stringify({ launcher_id: appId, tv_id: selectedTvId.value })
                 });
 
                 if (!response.ok) {
@@ -244,7 +581,7 @@ createApp({
                 const response = await fetch('api/pairing_code', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ code: pairingCode.value })
+                    body: JSON.stringify({ code: pairingCode.value, tv_id: selectedTvId.value })
                 });
 
                 const data = await response.json();
@@ -255,10 +592,7 @@ createApp({
                     pairingInProgress.value = false;
                 } else {
                     // Keep checking status to see when pairing completes
-                    if (statusCheckInterval) {
-                        clearInterval(statusCheckInterval);
-                    }
-                    statusCheckInterval = setInterval(checkStatus, 500);
+                    setStatusPolling(500);
                 }
             } catch (error) {
                 console.error('Error submitting pairing code:', error);
@@ -381,7 +715,7 @@ createApp({
                 fetch('api/send_text', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: text })
+                    body: JSON.stringify({ text: text, tv_id: selectedTvId.value })
                 });
 
                 if (navigator.vibrate) {
@@ -404,7 +738,8 @@ createApp({
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         text: keyboardText.value,
-                        enter: autoEnter.value
+                        enter: autoEnter.value,
+                        tv_id: selectedTvId.value
                     })
                 });
 
@@ -501,9 +836,11 @@ createApp({
             }
 
             try {
-                const response = await fetch('api/events');
+                const eventTvId = selectedTvId.value;
+                const response = await fetch(`api/events?tv_id=${encodeURIComponent(eventTvId)}`);
                 if (response.ok) {
                     const event = await response.json();
+                    if (eventTvId !== selectedTvId.value) return listenForEvents();
 
                     if (event.type === 'ime_show' || event.type === 'ime_focus') {
                         console.log('IME event received:', event.data);
@@ -564,11 +901,19 @@ createApp({
             }
 
 
-            // Check status immediately
-            checkStatus();
+            // Restore this client's last TV and connect without an extra tap.
+            refreshTvs().then(async () => {
+                await checkStatus();
+                if (selectedTvId.value) {
+                    await connectToTV();
+                }
+            }).catch((error) => {
+                console.error('Failed to initialize TVs:', error);
+                showError('Failed to load configured TVs');
+            });
 
-            // Check status every 2 seconds
-            statusCheckInterval = setInterval(checkStatus, 2000);
+            // Keep status icons current after the initial connection attempt.
+            setStatusPolling(2000);
 
             // Start listening for server events (long polling)
             listenForEvents();
@@ -634,7 +979,7 @@ createApp({
 
             // Register service worker for PWA
             if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.register('sw.js?v=3').then((registration) => {
+                navigator.serviceWorker.register('sw.js?v=6').then((registration) => {
                     console.log('Service worker registered successfully with scope:', registration.scope);
 
                     // Check for updates
@@ -682,6 +1027,18 @@ createApp({
         return {
             // State
             connectionStatus,
+            connecting,
+            tvs,
+            selectedTv,
+            selectedTvId,
+            showTvMenu,
+            showAddTvModal,
+            newTvName,
+            newTvHost,
+            addingTv,
+            connectionIcon,
+            connectionIconClass,
+            connectionLabel,
             showPairingModal,
             pairingCode,
             pairingInProgress,
@@ -696,6 +1053,20 @@ createApp({
             updateAvailable,
             showPwaHelp,
             pwaHelpMessage,
+            currentView,
+            allApps,
+            configuredTvId,
+            configuredAppIds,
+            savingTvApps,
+            showAppModal,
+            editingAppId,
+            appFormName,
+            appFormPackageId,
+            appFormIconClass,
+            appIconFile,
+            editingAppHasUploadedIcon,
+            removeAppIcon,
+            savingApp,
 
             // Methods
             sendKey,
@@ -703,6 +1074,20 @@ createApp({
             submitPairingCode,
             closePairingModal,
             connectToTV,
+            selectTv,
+            toggleTvMenu,
+            openAddTv,
+            addTv,
+            forgetTv,
+            openLauncherView,
+            openRemoteView,
+            selectConfiguredTv,
+            saveTvAppConfiguration,
+            openAddApp,
+            openEditApp,
+            handleAppIconChange,
+            saveApp,
+            deleteApp,
             handleKeyboardInput,
             handleKeyDown,
             sendSpecialKey,
