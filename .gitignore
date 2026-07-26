@@ -15,7 +15,7 @@ client_info.txt
 Thumbs.db
 
 # test setup
-deploy/compose.yml
+compose.yml
 test/
 
 # log files
