@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN mkdir -p data
 
 # Copy application files
+COPY VERSION .
 COPY server.py .
 # We don't copy certificates because they will be generated if missing,
 # but it's better to mount them as a volume to persist pairing.

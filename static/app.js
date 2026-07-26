@@ -3,7 +3,7 @@
  * Uses HTTP requests instead of WebSockets for reliability
  */
 
-const { createApp, ref, onMounted, onUnmounted } = Vue;
+const { createApp, ref, nextTick, onMounted, onUnmounted } = Vue;
 
 createApp({
     setup() {
@@ -14,6 +14,7 @@ createApp({
         const pairingInProgress = ref(false);
         const apps = ref([]);
         const tvName = ref('Android TV');
+        const version = ref('');
         const errorMessage = ref('');
         const keyboardText = ref('');
         const keyboardInput = ref(null);
@@ -68,6 +69,9 @@ createApp({
                 connectionStatus.value = data.connected;
                 tvName.value = data.tv_name || 'Android TV';
                 apps.value = data.apps || [];
+                if (data.version) {
+                    version.value = data.version;
+                }
 
                 // Show pairing modal if pairing is in progress
                 if (data.pairing_in_progress && !showPairingModal.value) {
@@ -501,8 +505,8 @@ createApp({
                 if (response.ok) {
                     const event = await response.json();
 
-                    if (event.type === 'ime_show') {
-                        console.log('IME Show event received:', event.data);
+                    if (event.type === 'ime_show' || event.type === 'ime_focus') {
+                        console.log('IME event received:', event.data);
 
                         // Update current text if provided
                         if (event.data && event.data.value !== undefined) {
@@ -511,9 +515,17 @@ createApp({
                         }
 
                         // Focus the keyboard input and scroll it into view
+                        await nextTick();
                         if (keyboardInput.value) {
                             keyboardInput.value.focus();
                             keyboardInput.value.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+                            if (event.data) {
+                                const textLength = keyboardText.value.length;
+                                const start = Math.max(0, Math.min(event.data.start ?? textLength, textLength));
+                                const end = Math.max(start, Math.min(event.data.end ?? start, textLength));
+                                keyboardInput.value.setSelectionRange(start, end);
+                            }
 
                             // Visual feedback
                             console.log("Keyboard auto-focused!");
@@ -675,6 +687,7 @@ createApp({
             pairingInProgress,
             apps,
             tvName,
+            version,
             errorMessage,
             keyboardText,
             keyboardInput,

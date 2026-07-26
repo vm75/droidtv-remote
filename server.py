@@ -7,7 +7,7 @@ import asyncio
 import logging
 import ssl  # Added ssl import here
 from pathlib import Path
-from typing import Optional, List, Callable
+from typing import Optional, List
 import yaml
 from aiohttp import web
 from androidtvremote2 import AndroidTVRemote, ConnectionClosed, CannotConnect, InvalidAuth
@@ -24,7 +24,15 @@ pairing_code_future: Optional[asyncio.Future] = None
 pairing_in_progress = False
 connecting = False
 
-# Event queue for long-polling
+# Read version
+try:
+    with open(Path(__file__).parent / "VERSION", "r") as f:
+        __version__ = f.read().strip()
+except Exception:
+    __version__ = "unknown"
+
+# Event queue for long-polling. Keep the most recent event when a browser is
+# briefly between long-poll requests.
 server_events = []
 server_event_futures: List[asyncio.Future] = []
 
@@ -34,13 +42,17 @@ def broadcast_event(event_type, data=None):
     global server_event_futures
     event = {"type": event_type, "data": data}
 
-    # Notify all waiting futures
-    for future in server_event_futures:
-        if not future.done():
-            future.set_result(event)
+    if server_event_futures:
+        # Notify all waiting clients.
+        for future in server_event_futures:
+            if not future.done():
+                future.set_result(event)
 
-    # Clear the list as they are single-use
-    server_event_futures = []
+        # Clear the list as they are single-use.
+        server_event_futures = []
+    else:
+        # Only the newest pending event is relevant when the client reconnects.
+        server_events[:] = [event]
 
 
 class CustomRemoteProtocol(RemoteProtocol):
@@ -48,8 +60,6 @@ class CustomRemoteProtocol(RemoteProtocol):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._on_ime_show_updated: Callable[[bool], None] = lambda x: None
-
 
     def _handle_message(self, raw_msg: bytes) -> None:
         """Handle a message from the server."""
@@ -71,25 +81,43 @@ class CustomRemoteProtocol(RemoteProtocol):
                     "end": info.end
                 })
 
-                # IMPORTANT: Send an acknowledgment back to claim the keyboard session
-                # This should dismiss the "Use keyboard on mobile device" notification
-                # We send an empty IME edit to acknowledge we've taken control
-                from androidtvremote2.remotemessage_pb2 import RemoteImeBatchEdit, RemoteEditInfo, RemoteImeObject
+                # Claim the text-input session without changing the TV field.
+                from androidtvremote2.remotemessage_pb2 import (
+                    RemoteEditInfo,
+                    RemoteImeBatchEdit,
+                    RemoteImeObject,
+                )
 
-                # Create a response acknowledging the IME session
                 response = RemoteMessage()
-                ime_object = RemoteImeObject(start=0, end=0, value="")
-                edit_info = RemoteEditInfo(insert=0, text_field_status=ime_object)
-                batch_edit = RemoteImeBatchEdit(
+                response.remote_ime_batch_edit.CopyFrom(RemoteImeBatchEdit(
                     ime_counter=info.counter_field,
                     field_counter=info.counter_field,
-                    edit_info=[edit_info],
-                )
-                response.remote_ime_batch_edit.CopyFrom(batch_edit)
-
-                # Send the acknowledgment
+                    edit_info=[RemoteEditInfo(
+                        insert=0,
+                        text_field_status=RemoteImeObject(
+                            start=0,
+                            end=0,
+                            value="",
+                        ),
+                    )],
+                ))
                 self._send_message(response)
-                logger.info("Sent IME acknowledgment to TV")
+                logger.debug(
+                    "Acknowledged IME session (counter=%s)",
+                    info.counter_field,
+                )
+
+            elif (msg.HasField("remote_ime_key_inject") and
+                  msg.remote_ime_key_inject.HasField("text_field_status")):
+                # The TV also sends this message when text-field focus changes.
+                info = msg.remote_ime_key_inject.text_field_status
+                logger.debug(f"IME focus update: value='{info.value}', label='{info.label}'")
+                broadcast_event("ime_focus", {
+                    "value": info.value,
+                    "label": info.label,
+                    "start": info.start,
+                    "end": info.end
+                })
 
         except Exception as e:
             logger.error(f"Error intercepting message: {e}")
@@ -242,7 +270,7 @@ async def initialize_tv(force=False):
             certfile=str(cert_file),
             keyfile=str(key_file),
             host=config.get('tv_ip', '127.0.0.1'),
-            enable_ime=False,  # Disable IME to prevent "Use keyboard on mobile device" notification
+            enable_ime=True,
         )
 
 
@@ -333,7 +361,8 @@ async def status_handler(request):
         "pairing_in_progress": pairing_in_progress,
         "connecting": connecting,
         "tv_name": config.get('tv_name', 'Android TV'),
-        "apps": config.get('apps', [])
+        "apps": config.get('apps', []),
+        "version": __version__
     })
 
 
@@ -426,7 +455,14 @@ async def send_text_handler(request):
         return web.json_response({"error": "No text provided"}, status=400)
 
     try:
-        # Use the native send_text method from the library
+        # Text entry worked before IME event monitoring was enabled, when the
+        # library sent its default zero counters. TV show/focus messages carry
+        # different counters that androidtvremote2 does not fully support, so
+        # preserve the known-working outbound behavior.
+        protocol = tv_remote._remote_message_protocol
+        protocol.ime_counter = 0
+        protocol.ime_field_counter = 0
+
         logger.info(f"Sending text to TV (len: {len(text)}, enter: {send_enter})")
         tv_remote.send_text(text)
 
@@ -448,6 +484,9 @@ async def send_text_handler(request):
 async def events_handler(request):
     """Long polling endpoint for server events"""
     global server_event_futures
+
+    if server_events:
+        return web.json_response(server_events.pop(0))
 
     # Create a future for this request
     future = asyncio.Future()

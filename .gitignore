@@ -14,4 +14,8 @@ client_info.txt
 Thumbs.db
 
 # test setup
+docker-compose.yml
 test/
+
+# log files
+*.log

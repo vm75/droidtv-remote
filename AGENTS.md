@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-`server.py` contains the aiohttp backend, TV connection logic, API handlers, and static-file serving. Browser and PWA assets live in `static/`. Runtime configuration and generated pairing certificates belong under `data/`; begin with `config.yaml.example`. Deployment files include `Dockerfile`, `docker-compose.yml`, and `nginx_subfolder.example`.
+`server.py` contains the aiohttp backend, TV connection logic, API handlers, and static-file serving. Browser and PWA assets live in `static/`. Runtime configuration and generated pairing certificates belong under `data/`; begin with `config.yaml.example`. Deployment files include `Dockerfile`, `docker-compose.yml`, and `nginx_subfolder.example`. The `VERSION` file stores the current project version, which is read by `server.py` and passed to the UI.
 
 ## Build, Test, and Development Commands
 
@@ -19,7 +19,7 @@ Use four-space indentation and PEP 8 conventions in Python: `snake_case` for fun
 
 ## Agent-Specific Instructions
 
-Apply KISS and YAGNI to every change. Prefer the smallest clear implementation that solves the current requirement and follows existing patterns. Avoid new abstractions, dependencies, speculative options, compatibility layers, or refactors for hypothetical needs. Explain unavoidable complexity in the pull request.
+Apply KISS and YAGNI to every change. Prefer the smallest clear implementation that solves the current requirement and follows existing patterns. Avoid new abstractions, dependencies, speculative options, compatibility layers, or refactors for hypothetical needs. Explain unavoidable complexity in the pull request. ALWAYS update documentation (`README.md`, `AGENTS.md`, and any other relevant markdown files) after making any updates or changes to the project.
 
 ## Testing Guidelines
 

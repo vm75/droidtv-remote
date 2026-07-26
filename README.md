@@ -63,6 +63,11 @@ docker pull ghcr.io/vm75/droidtv-remote:latest
 docker-compose up -d
 ```
 
+## 🔖 Versioning
+
+The project's version is maintained in the `VERSION` file at the repository root. This version is automatically displayed in the web UI header and is exposed via the `/api/status` endpoint. 
+When publishing a new release, simply update the `VERSION` file and push a new Git tag (e.g., `v0.1.0`). The GitHub Actions workflow will automatically build and publish the Docker images to Docker Hub and GHCR with the corresponding version tags and OCI metadata labels.
+
 ## 🔧 Configuration
 
 Edit `config.yaml` to customize:
