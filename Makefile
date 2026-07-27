@@ -1,9 +1,11 @@
-.PHONY: build run start stop clean dev test
+.PHONY: build build-container run start stop clean dev dev-container test
 
-PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python)
+GO ?= go
 
-# Podman Compose targets
 build:
+	$(GO) build -trimpath -o droidtv-remote ./server
+
+build-container:
 	podman build -f deploy/Containerfile -t vm75/droidtv-remote:latest .
 
 run:
@@ -19,12 +21,16 @@ clean:
 	podman compose -f deploy/compose.yml down
 
 dev:
+	$(GO) run ./server
+
+dev-container:
 	podman compose -f compose-dev.yml up --build
 
 test:
-	$(PYTHON) -m py_compile server/server.py
+	test -z "$$(gofmt -l server)"
+	$(GO) test -race ./...
+	$(GO) vet ./...
 	node --check client/app.js
 	node --check client/sw.js
 	node tests/test_sw.js
 	node tests/test_app.js
-	$(PYTHON) -m unittest discover -s tests -v

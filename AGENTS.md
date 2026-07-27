@@ -1,46 +1,50 @@
 # Repository Guidelines
 
-## Project Structure & Module Organization
+## Project structure
 
-`server/server.py` contains the aiohttp backend, per-TV connection state, TV registry APIs, and static-file serving. Backend dependencies are listed in `server/requirements.txt`. Browser and PWA assets live in `client/`. Deployment configurations (`Containerfile`, `compose.yml.sample`, `nginx_subdomain.example`, `nginx_subfolder.example`) live in `deploy/`. Tests live in `tests/`. Runtime settings use `data/config.yaml`; PWA-managed records use `data/tvs.yaml` and `data/apps.yaml`, uploaded launcher icons use `data/icons/`, and generated credentials live under `data/tvs/<tv-id>/`. Begin with `config.yaml.example`. The `VERSION` file stores the current project version, which is read by `server/server.py` and passed to the UI. Root documentation files (`README.md`, `DOCKERHUB.md`, `AGENTS.md`) document the system and repository workflows.
+`server/` contains the Go HTTP server, Android TV Remote v2 protocol subset, persistent registry handling, and MCP endpoint. `client/` contains the unchanged browser and PWA assets. Deployment files live in `deploy/`; local development compose configuration is `compose-dev.yml`. Tests for the server live beside the Go code, and browser tests live in `tests/`.
 
-## Build, Test, and Development Commands
+Runtime settings use `data/config.yaml`; managed records use `data/tvs.yaml` and `data/apps.yaml`; uploaded icons use `data/icons/`; generated credentials live under `data/tvs/<tv-id>/`. Begin with `config.yaml.example`. `VERSION` is the single release version and is substituted into PWA entry assets at serve time.
 
-- `python -m venv .venv && source .venv/bin/activate` creates an isolated Python environment.
-- `pip install -r server/requirements.txt` installs aiohttp, androidtvremote2, and PyYAML.
-- `mkdir -p data && cp config.yaml.example data/config.yaml` creates a local configuration; add and pair TVs from the PWA.
-- `python server/server.py` starts the service on port 7503.
-- `podman compose -f deploy/compose.yml up --build` (or `docker compose -f deploy/compose.yml up --build`) builds and runs the container with host networking and persistent `data/` storage.
-- `make dev` builds and runs `compose.yml`, cleaning up containers on exit.
-- `python -m py_compile server/server.py` performs a quick backend syntax check.
-- `python -m unittest discover -s tests -v` runs the automated backend tests.
+## Build, test, and development commands
+
+- `mkdir -p data && cp config.yaml.example data/config.yaml` creates local runtime configuration.
+- `go run ./server` starts the service on port 7503.
+- `go build -trimpath -o droidtv-remote ./server` creates a local binary.
+- `gofmt -w server` formats server code.
+- `go test -race ./...` runs server tests and the race detector.
+- `go vet ./...` runs static checks.
 - `node --check client/app.js && node --check client/sw.js` checks PWA script syntax.
-- `node tests/test_app.js` checks remembered TV selection and automatic connection behavior.
-- `node tests/test_sw.js` checks that stale persisted PWA assets are replaced by the network response.
-- `make test` runs the syntax checks and automated PWA/backend suites, preferring `.venv/bin/python` when available.
+- `node tests/test_app.js && node tests/test_sw.js` runs browser-client tests.
+- `make test` runs all formatting, Go, and browser checks.
+- `podman compose -f compose-dev.yml up --build` starts the development container.
 
-## Coding Style & Naming Conventions
+## Coding style
 
-Use four-space indentation and PEP 8 conventions in Python: `snake_case` for functions and variables, `PascalCase` for classes, and uppercase names for true constants. Preserve type hints on shared state and public interfaces. In JavaScript, follow the existing four-space indentation, semicolons, `camelCase` identifiers, and `const` by default. Keep API routes and frontend fetch paths compatible with optional subfolder hosting. No formatter or linter is currently configured, so keep changes focused and consistent with neighboring code.
+Use standard Go formatting and naming. Keep packages small, errors explicit, shared state synchronized, and HTTP response structures stable. Prefer the standard library. Do not introduce an external dependency when the required behavior is small enough to implement clearly in the repository.
 
-## Agent-Specific Instructions
+In JavaScript, preserve the existing four-space indentation, semicolons, `camelCase`, relative request paths, and compatibility with older installed PWA WebViews. Do not change the client or persisted configuration schema unless a task explicitly requires it.
 
-Apply KISS and YAGNI to every change. Prefer the smallest clear implementation that solves the current requirement and follows existing patterns. Avoid new abstractions, dependencies, speculative options, compatibility layers, or refactors for hypothetical needs. Explain unavoidable complexity in the pull request. ALWAYS update documentation (`README.md`, `DOCKERHUB.md`, `AGENTS.md`, and any other relevant markdown files) after making any updates or changes to the project. Keep `DOCKERHUB.md` synchronized with `README.md` whenever features, configuration, or deployment instructions change.
+## KISS and YAGNI
 
-## Testing Guidelines
+Prefer the smallest implementation that solves a current requirement. Avoid speculative protocol features, framework layers, generic repositories, compatibility shims, and abstractions with one caller. The Android TV implementation should contain only pairing, key, app-link, IME, keepalive, certificate, and reconnection behavior used by this project.
 
-Run the automated tests, syntax checks, and start the server. Manually verify `/api/status`, multi-TV pairing and switching, launcher CRUD and icon upload, per-TV launcher availability, automatic connection, forgetting/re-pairing, key commands, and app launching against TVs when available. Test frontend changes in a browser and installed PWA, including reverse-proxy subpaths, stale normal-browser cache recovery, and older mobile WebViews when PWA syntax changes. Put new tests in `tests/` and name Python files `test_*.py`.
+Always update `README.md`, `DOCKERHUB.md`, `AGENTS.md`, and other relevant documentation after project changes. Keep `DOCKERHUB.md` synchronized with user-visible features and deployment instructions in `README.md`.
 
-## Commit & Pull Request Guidelines
+## Testing guidelines
 
-Recent commits use short, imperative, lowercase summaries such as `fixed keyboard` and `changed button layout`. Keep each commit scoped to one behavior. Pull requests should explain the user-visible effect, note configuration or certificate implications, list manual checks, and link related issues. Include screenshots for UI changes and call out any untested TV-specific behavior.
+Run `make test`, build the binary, and start the server. Automated tests must preserve REST status codes and JSON shapes, migration behavior, atomic persistence, certificate reuse, icon validation, TV-scoped long polling, reverse-proxy subpaths, version substitution, and MCP tool parity.
 
-## Security & Configuration Tips
+When TVs are available, manually verify concurrent multi-TV pairing and switching, automatic connection, reconnect after TV restart, key commands, text focus and entry, app launch, forgetting/re-pairing, and retained-subpath deployment. Call out any TV-specific behavior that could not be tested.
 
-Do not commit `data/config.yaml`, `data/tvs.yaml`, `data/apps.yaml`, uploaded `data/icons/`, any `cert.pem` or `key.pem`, TV addresses, or pairing codes. Treat per-TV generated certificates as secrets and preserve the mounted `data/` directory across container upgrades.
+## Commit and pull request guidelines
+
+Use short, imperative commit summaries. Keep each commit scoped. Pull requests should state user-visible behavior, compatibility and certificate implications, tests run, hardware checks, and any untested device-specific behavior. Include screenshots only for client changes.
+
+## Security
+
+Do not commit `data/config.yaml`, `data/tvs.yaml`, `data/apps.yaml`, uploaded icons, generated certificates or keys, TV addresses, or pairing codes. Treat the PWA, REST API, and MCP endpoint as trusted-LAN services unless protected by HTTPS and access controls.
 
 ## Versioning
 
-Use semantic versioning in the root `VERSION` file (`MAJOR.MINOR.PATCH`). Use a patch bump for PWA-only changes such as UI, copy, styling, or cache-only updates. Use a minor bump for bug fixes and minor feature additions. Use a major bump for large, breaking, or incompatible changes.
-
-Client files (`sw.js`, `app.js`, `index.html`, `manifest.json`, `reset.html`) use the placeholder token `__VERSION__` wherever the version string is needed. The server reads `VERSION` at startup and substitutes the real value into these files when serving them via `pwa_file_response()`. This makes `VERSION` the single source of truth — version bumps only require editing that one file. Run the backend tests, PWA tests, syntax checks, and version-placeholder test before committing.
+Use semantic versioning in `VERSION`. Use a patch for PWA-only changes, a minor release for compatible fixes and additions, and a major release for large or incompatible architecture changes. Client entry files use `__VERSION__`; never hard-code release values in client assets.

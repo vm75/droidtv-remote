@@ -2,15 +2,15 @@
 
 # 📺 droidtv-remote
 
-**A modern Progressive Web App (PWA) for seamlessly controlling multiple Android TV devices from any phone, tablet, or browser.**
+**A compact Go server and modern Progressive Web App for controlling multiple Android TV devices from any phone, tablet, browser, or MCP client.**
 
 [![Docker Publish](https://github.com/vm75/droidtv-remote/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/vm75/droidtv-remote/actions/workflows/docker-publish.yml)
 [![Docker Pulls](https://img.shields.io/docker/pulls/vm75/droidtv-remote)](https://hub.docker.com/r/vm75/droidtv-remote)
 [![Docker Image Version](https://img.shields.io/docker/v/vm75/droidtv-remote?sort=semver)](https://hub.docker.com/r/vm75/droidtv-remote)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Platforms](https://img.shields.io/badge/platform-amd64%20%7C%20arm64-blue)](#docker)
+[![Platforms](https://img.shields.io/badge/platform-amd64%20%7C%20arm64-blue)](#containers)
 
-[Features](#features) • [Installation](#installation) • [Docker](#docker) • [Docker Hub](https://hub.docker.com/r/vm75/droidtv-remote) • [GHCR](https://github.com/vm75/droidtv-remote/pkgs/container/droidtv-remote)
+[Features](#features) • [Installation](#installation) • [MCP](#mcp-server) • [Containers](#containers)
 
 ---
 </div>
@@ -20,43 +20,42 @@
 - Full D-pad, media, volume, power, color-key, keyboard, and app-launch controls
 - Multiple TVs with independent secure pairing credentials
 - Configurable shared app launchers with per-TV availability and uploaded icons
-- Top-left TV menu for adding, switching, reconnecting, and forgetting TVs
-- Per-client last-TV selection, remembered in browser storage
 - Automatic connection when the PWA opens or its selected TV changes
-- Connection, connecting, pairing, and disconnected status icons
 - Automatic reconnection after an active TV connection drops
-- Mobile-compatible JavaScript for older installed PWA WebViews
-- Installable PWA with reverse-proxy subpath support
+- Persistent pairing certificates under the existing `data/` layout
+- Existing REST paths, JSON responses, long-poll events, and reverse-proxy subpaths
+- Built-in MCP Streamable HTTP endpoint exposing every server API
+- Single static Go binary with no runtime package dependencies
+- Existing browser client and configuration schema unchanged
 
 ## Installation
 
-1. Clone the repository and enter it:
+1. Clone the repository:
 
    ```bash
    git clone https://github.com/vm75/droidtv-remote.git
    cd droidtv-remote
    ```
 
-2. Install the Python dependencies:
-
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate
-   pip install -r server/requirements.txt
-   ```
-
-3. Create the runtime configuration:
+2. Create the runtime configuration:
 
    ```bash
    mkdir -p data
    cp config.yaml.example data/config.yaml
    ```
 
-4. Start the server and open `http://localhost:7503`:
+3. Start the server and open `http://localhost:7503`:
 
    ```bash
-   python server/server.py
+   go run ./server
    ```
+
+For a reusable binary:
+
+```bash
+go build -trimpath -o droidtv-remote ./server
+./droidtv-remote
+```
 
 The server listens on all interfaces, so another device on the LAN can use `http://<server-ip>:7503`.
 
@@ -66,70 +65,73 @@ The server listens on all interfaces, so another device on the LAN can use `http
 2. Choose **Add TV**.
 3. Enter a display name and the TV's IP address or host name.
 4. The PWA selects the new TV and starts connecting automatically.
-5. When the code appears on the TV, enter it in the pairing dialog.
+5. Enter the six-character code displayed by the TV.
 
-Repeat these steps for every TV. Selecting another TV in the menu immediately makes it the active target and triggers its connection. Each browser or installed PWA remembers its own last selection.
+Each TV receives an independent client certificate and key. Selecting another TV immediately changes the command target and starts its connection. Each browser or installed PWA remembers its own last selection.
 
-Use the trash icon beside a TV to forget it. Forgetting stops its connection, removes it from the server registry, and deletes only that TV's generated pairing certificate and key. Pair again to re-add it.
+Use the trash icon beside a TV to forget it. Forgetting stops its connection, removes it from the registry, and deletes only that TV's generated credentials.
 
-Existing single-TV installations are migrated automatically on first startup. The legacy `tv_ip`, `tv_name`, `data/cert.pem`, and `data/key.pem` values are copied into the managed TV registry; the original files are left in place.
+Existing single-TV installations migrate automatically on first startup. Legacy `tv_ip`, `tv_name`, `data/cert.pem`, `data/key.pem`, and `apps` entries retain their existing migration behavior.
 
 ## Managing app launchers
 
-Open the **apps** button in the remote header to switch to the separate launcher-management view.
+Open the **apps** button in the remote header to manage the shared launcher library.
 
-- **Add** creates a launcher shared by all TVs. Enter its display name and Android package ID.
-- **Edit** changes the shared name, package ID, Material icon class, or uploaded icon.
-- **Delete** removes the launcher from the shared library and every TV.
-- **Reorder** moves shared launchers up or down in the common library or per-TV available list.
-- **Available on TV** selects a TV, controls which shared launchers appear in that TV's remote view, and allows ordering their display sequence. Choose/reorder the launchers and press **Save TV apps**.
+- **Add** creates a shared launcher from a display name and Android package ID.
+- **Edit** changes its name, package ID, Material icon class, or uploaded icon.
+- **Delete** removes it from the shared library and every TV.
+- **Reorder** changes common order and per-TV order.
+- **Available on TV** controls which shared launchers appear for each TV.
 
-Uploaded icons may be PNG, JPEG, WebP, or GIF and must be 2 MB or smaller. Uploaded files are validated and stored with generated names under `data/icons/`. A newly created launcher is not enabled automatically; select it for each appropriate TV. Newly added TVs initially enable all launchers currently in the shared library.
+Uploaded icons may be PNG, JPEG, WebP, or GIF and must be 2 MB or smaller. They are signature-checked and stored with generated names under `data/icons/`.
 
-Existing `apps` entries in `data/config.yaml` migrate once into the managed shared library and are initially enabled on existing TVs. After migration, edit launchers in the PWA rather than in `config.yaml`.
+## Runtime data and configuration
 
-## Runtime data
+The mounted `data/` directory remains fully compatible:
 
-The mounted `data/` directory contains:
-
-- `config.yaml`: server port and legacy settings used during migration
-- `apps.yaml`: PWA-managed common app launcher records
-- `tvs.yaml`: PWA-managed TV names, addresses, generated IDs, and enabled launcher IDs
+- `config.yaml`: server port and legacy migration values
+- `apps.yaml`: managed common app launcher records
+- `tvs.yaml`: managed TV records and enabled launcher IDs
 - `tvs/<tv-id>/cert.pem` and `key.pem`: per-TV pairing credentials
 - `icons/`: uploaded launcher icons
 
-Preserve the entire `data/` directory across upgrades. Do not commit it: TV addresses and certificates are sensitive.
+Preserve the entire directory across upgrades and do not commit it. TV addresses, keys, certificates, and pairing codes are sensitive.
 
-## Configuration
-
-`data/config.yaml` controls the HTTP server. TVs and launchers are managed from the PWA:
+The configuration schema is unchanged:
 
 ```yaml
 server_port: 7503
 ```
 
-You can also configure the port via the `SERVER_PORT` (or `PORT`) environment variable or `SERVER_PORT` build argument in `Containerfile`. Environment variables override `data/config.yaml`.
+`SERVER_PORT`, then `PORT`, overrides `data/config.yaml`. The default is `7503`.
 
-### Finding a TV address
+## MCP server
 
-On the Android TV, open **Settings → Network & Internet → Your network** and note the IP address. A DHCP reservation is recommended so the address does not change.
+The same process exposes a stateless MCP Streamable HTTP endpoint at:
 
-### Finding app package IDs
+```text
+http://<server-ip>:7503/mcp
+```
 
-Common package IDs include:
+It supports MCP initialization, ping, tool discovery, and tool calls. The 16 tools mirror every REST capability:
 
-- Netflix: `com.netflix.ninja`
-- YouTube: `com.google.android.youtube.tv`
-- Disney+: `com.disney.disneyplus`
-- Prime Video: `com.amazon.amazonvideo.livingroom`
-- OTT Navigator: `studio.scillarium.ottnavigator`
-- Apple TV: `com.apple.atve.androidtv.appletv`
-- Plex: `com.plexapp.android`
-- Spotify: `com.spotify.tv.android`
+`status`, `list_tvs`, `add_tv`, `forget_tv`, `set_tv_apps`, `list_apps`, `add_app`, `update_app`, `reorder_apps`, `delete_app`, `connect_tv`, `submit_pairing_code`, `send_key`, `send_text`, `launch_app`, and `next_event`.
 
-You can also query a connected TV with `adb shell pm list packages`.
+Uploaded MCP icons use base64 plus a MIME type. `next_event` preserves TV-scoped long-poll behavior. See [MCP.md](MCP.md) for client configuration and request examples.
 
-## Docker
+## Android TV protocol
+
+The server contains only the Android TV Remote v2 functionality this project needs:
+
+- TLS client-certificate generation and persistence
+- pairing request, option, configuration, and secret exchange on port `6467`
+- remote configuration, activation, ping, key, IME, and app-link messages on port `6466`
+- IME show/focus event forwarding and text injection
+- disconnect detection and bounded automatic reconnection
+
+The implementation intentionally avoids unrelated device discovery, voice streaming, telemetry, and protocol features not used by this project.
+
+## Containers
 
 Images are published to Docker Hub and GHCR:
 
@@ -138,49 +140,53 @@ docker pull vm75/droidtv-remote:latest
 docker pull ghcr.io/vm75/droidtv-remote:latest
 ```
 
-Run with host networking and mount `/app/data` persistently so the container can reach LAN TVs and retain all pairings. The server port can be customized at runtime with `-e SERVER_PORT=7503` or at build time with `--build-arg SERVER_PORT=7503` in `deploy/Containerfile`. The included Compose files are examples.
+Use host networking so the container can reach TVs on the LAN, and persist `/app/data`:
 
-```bash
-docker compose -f deploy/compose.yml up -d
+```yaml
+services:
+  droidtv-remote:
+    image: vm75/droidtv-remote:latest
+    container_name: droidtv-remote
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      - SERVER_PORT=7503
+    volumes:
+      - ./data:/app/data
 ```
+
+The multi-stage `deploy/Containerfile` produces a minimal static image for `linux/amd64` and `linux/arm64`.
 
 ## Reverse proxies
 
-The API and PWA use relative URLs and work at either a dedicated subdomain or a subpath. Use `deploy/nginx_subdomain.example` for a root-level host such as `https://remote.example.com/`, or `deploy/nginx_subfolder.example` for a path such as `https://example.com/remote/`. Serve the application over HTTPS for reliable PWA installation.
+The API and PWA continue to use relative URLs and work at a dedicated subdomain or retained subpath. Use `deploy/nginx_subdomain.example` or `deploy/nginx_subfolder.example` as a starting point. Serve the PWA over HTTPS for reliable installation.
+
+The MCP endpoint follows the same prefix handling, so both `/mcp` and a retained path such as `/remote/mcp` reach the same handler.
 
 ## Development and verification
 
 ```bash
-python -m py_compile server/server.py
+gofmt -w server
+go test -race ./...
+go vet ./...
 node --check client/app.js
 node --check client/sw.js
 node tests/test_app.js
 node tests/test_sw.js
-python -m unittest discover -s tests -v
-python server/server.py
+go run ./server
 ```
 
-`make test` runs the syntax checks and automated PWA/backend test suites, preferring `.venv/bin/python` when it exists. Set `PYTHON` to use another interpreter.
+`make test` runs formatting, Go, race, vet, and browser-client checks. The Go tests cover registry migrations, certificate persistence, REST compatibility, launcher uploads, long polling, subpaths, protocol encoding, and MCP tool calls.
 
-When TVs are available, manually verify adding/pairing more than one TV, switching command targets, automatic connection after opening the PWA, launcher add/edit/delete and icon upload, per-TV launcher filtering, reconnection after a TV restart, forgetting and re-pairing, IME events, and installation under the intended reverse-proxy path.
-
-PWA entry assets use network-first updates with an offline fallback, and the server disables browser HTTP caching for the HTML, app script, manifest, and service worker. Versioned entry URLs let an installed PWA escape an older cache-first worker. If a previous install remains stale, open `reset.html` under the application subpath once; it unregisters only that subpath's service worker, removes only `droidtv-remote` caches, and reloads the current release.
-
-The nginx `proxy_pass` target must be reachable from the nginx process. `localhost:7503` is correct only when nginx can reach droidtv-remote on its own host network; use the service name or host gateway when nginx runs in another container. A `502 Bad Gateway` response means this upstream connection is unavailable, not that the PWA cache is stale.
+Hardware verification still requires Android TV devices. Verify concurrent multi-TV pairing, switching, keyboard focus/text entry, launcher commands, TV restart reconnection, forgetting/re-pairing, and reverse-proxy deployment against the target devices.
 
 ## Security
 
-TV communication uses TLS pairing credentials. The HTTP PWA server is intended for a trusted local network; place it behind HTTPS and access controls before exposing it more broadly. Never share `data/tvs.yaml`, certificates, pairing keys, TV addresses, or pairing codes. Uploaded icons are restricted to validated raster image types and bounded to 2 MB.
+TV communication uses TLS pairing credentials. The HTTP PWA and MCP server are intended for a trusted local network. Place them behind HTTPS and access controls before broader exposure. Never share persisted TV data or pairing codes.
 
 ## Versioning
 
-The root `VERSION` value is shown in the PWA and returned by `/api/status`. It follows semantic versioning:
-
-- Patch: PWA-only changes such as UI, copy, styling, or cache-only updates.
-- Minor: bug fixes and minor feature additions.
-- Major: large, breaking, or incompatible changes.
-
-Client files use a `__VERSION__` placeholder that the server substitutes with the real version at serve-time, so bumping `VERSION` is the only step needed. The version-placeholder test catches any file that still contains a hard-coded version, and release automation publishes tagged container images.
+The root `VERSION` value is shown in the PWA, returned by `/api/status`, and reported by MCP. Client entry assets use `__VERSION__`, which the server replaces at serve time. Release automation publishes matching container tags.
 
 ## License
 

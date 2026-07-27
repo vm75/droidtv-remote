@@ -1,22 +1,23 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-venv/
-.venv/
-.env
+# Go build and test output
+droidtv-remote
+*.test
+coverage.out
 
-# Configuration & Secrets
+# Local environment
+.env
+data
+
+# Configuration and secrets
+data/
 dev/
 client_info.txt
 
-# OS Files
+# OS files
 .DS_Store
 Thumbs.db
 
-# test setup
+# Local compose override
 compose.yml
-test/
 
-# log files
+# Logs
 *.log

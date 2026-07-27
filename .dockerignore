@@ -1,9 +1,11 @@
 .git
-.venv
-__pycache__
-**/__pycache__
-*.pyc
-*.pyo
 .gitignore
+data
+dev
+compose.yml
+*.log
 README.md
+DOCKERHUB.md
+AGENTS.md
+MCP.md
 LICENSE

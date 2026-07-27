@@ -2,7 +2,7 @@
 
 # 📺 droidtv-remote
 
-**A modern Progressive Web App (PWA) for seamlessly controlling multiple Android TV devices from any phone, tablet, or browser.**
+**A compact Go server and installable PWA for controlling multiple Android TV or Google TV devices.**
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/vm75/droidtv-remote)](https://hub.docker.com/r/vm75/droidtv-remote)
 [![Docker Image Version](https://img.shields.io/docker/v/vm75/droidtv-remote?sort=semver)](https://hub.docker.com/r/vm75/droidtv-remote)
@@ -10,28 +10,24 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/vm75/droidtv-remote/blob/main/LICENSE)
 [![Platforms](https://img.shields.io/badge/platform-amd64%20%7C%20arm64-blue)](https://hub.docker.com/r/vm75/droidtv-remote)
 
-[GitHub Repository](https://github.com/vm75/droidtv-remote) • [Docker Hub](https://hub.docker.com/r/vm75/droidtv-remote) • [Quick Start](#quick-start--docker-compose)
-
 ---
 </div>
 
 ## Overview
 
-**droidtv-remote** is a lightweight, mobile-first PWA for remote controlling one or more Android TV or Google TV devices. It provides full remote navigation, key inputs, text entry, app launcher management, and auto-reconnection over local network TLS pairing.
+`droidtv-remote` is a lightweight, mobile-first remote for one or more Android TV or Google TV devices. Its single Go process serves the existing PWA, REST API, long-poll event stream, Android TV Remote v2 connection, and MCP endpoint.
 
-## Key Features
+## Key features
 
-- **Full Remote Controls**: D-pad navigation, media buttons, volume, power, color keys, software keyboard input, and direct app launching.
-- **Multi-TV Support**: Manage multiple Android TVs with independent pairing credentials.
-- **Custom App Launchers**: Shared launcher library with custom uploaded icons, per-TV availability toggles, custom reordering, and Android package ID support.
-- **Installable PWA**: Responsive UI designed for phones, tablets, and desktop browsers; works standalone or behind reverse proxies with custom subpaths.
-- **Auto Reconnect & Remember**: Remembers your active TV selection per client and connects automatically upon launch.
+- D-pad, media, volume, power, color keys, keyboard input, and direct app launching
+- Multiple TVs with independent persistent pairing credentials
+- Shared app launchers with uploaded icons and per-TV ordering
+- Automatic connection and reconnection
+- Reverse-proxy subdomain and subpath support
+- MCP tools for every REST capability at `/mcp`
+- Minimal static container image with no runtime package dependencies
 
-## Quick Start (Docker Compose)
-
-The recommended deployment uses host networking so the container can discover and communicate with Android TV devices on your local network.
-
-Create a `compose.yml` file:
+## Quick start
 
 ```yaml
 services:
@@ -46,17 +42,13 @@ services:
       - ./data:/app/data
 ```
 
-Start the container:
-
 ```bash
 docker compose up -d
 ```
 
-Access the Web UI / PWA at `http://<server-ip>:7503`.
+Open `http://<server-ip>:7503`. Add a TV from the top-left menu, then enter the six-character pairing code shown on the TV.
 
 ## Docker CLI
-
-Alternatively, run with `docker run`:
 
 ```bash
 docker run -d \
@@ -64,48 +56,32 @@ docker run -d \
   --net=host \
   --restart=unless-stopped \
   -e SERVER_PORT=7503 \
-  -v $(pwd)/data:/app/data \
+  -v "$(pwd)/data:/app/data" \
   vm75/droidtv-remote:latest
 ```
 
-## Storage & Persistence
+## Persistence
 
-Mount `/app/data` to a persistent directory on the host. This directory stores:
-- `config.yaml`: Port and runtime configurations.
-- `tvs.yaml` & `apps.yaml`: Registered TV details and app launcher configurations.
-- `tvs/<tv-id>/`: TLS certificates and private keys generated during pairing.
-- `icons/`: Uploaded app launcher icon assets.
+Keep `/app/data` mounted across upgrades. It stores:
 
-> ⚠️ **Important**: Keep `/app/data` persistent across container updates to preserve TV pairing certificates and custom launcher configurations.
+- `config.yaml`
+- `tvs.yaml` and `apps.yaml`
+- `tvs/<tv-id>/cert.pem` and `key.pem`
+- uploaded launcher icons
 
-## Configuration & Environment Variables
+The existing configuration and data schemas remain compatible. `SERVER_PORT`, then `PORT`, overrides `server_port` in `data/config.yaml`.
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `SERVER_PORT` | `7503` | HTTP port for the web server and API |
-| `PORT` | `7503` | Fallback environment variable for the HTTP port |
+## MCP
 
-## Initial Setup & TV Pairing
+Connect an MCP client to `http://<server-ip>:7503/mcp`. The server exposes 16 tools covering TV and launcher management, connection and pairing, keys, text, app launching, status, and long-poll events. Use access controls before exposing MCP outside a trusted LAN.
 
-1. Open `http://<server-ip>:7503` in your browser or phone.
-2. Open the top-left TV menu and select **Add TV**.
-3. Enter the display name and IP address of your Android TV.
-4. Input the pairing code displayed on your TV screen.
-5. Control your TV!
+## Updates and reverse proxies
 
-## Links & Documentation
+PWA entry files receive the released `VERSION` at serve time and are sent with no-cache headers. The API, PWA, and MCP endpoint accept retained reverse-proxy subpaths. Example nginx configurations are included for a subdomain and subfolder deployment.
 
-- [GitHub Repository](https://github.com/vm75/droidtv-remote)
-- [GHCR Container Registry](https://github.com/vm75/droidtv-remote/pkgs/container/droidtv-remote)
-- [Issue Tracker](https://github.com/vm75/droidtv-remote/issues)
-- [License (MIT)](https://github.com/vm75/droidtv-remote/blob/main/LICENSE)
+## Links
 
-## PWA updates
-
-The PWA cache, service-worker registration, and PWA entry URLs use the released `VERSION`, and entry assets update from the network before falling back offline. The server also disables browser HTTP caching for those assets. If an old installed PWA remains stale after deployment, open `reset.html` under the application subpath once to unregister its worker and remove only droidtv-remote caches. A `502 Bad Gateway` response means nginx cannot reach its configured droidtv-remote upstream. The browser code avoids optional chaining and nullish coalescing so it continues to load in older mobile WebViews.
-
-The repository includes nginx examples for both a root-level subdomain (`deploy/nginx_subdomain.example`) and subpath hosting (`deploy/nginx_subfolder.example`). Replace the example hostname, TLS certificate paths, and upstream address before enabling either configuration.
-
-## Development checks
-
-Run `make test` to execute the backend, PWA, and syntax checks locally. It uses `.venv/bin/python` when available; set `PYTHON` to override it.
+- [GitHub repository](https://github.com/vm75/droidtv-remote)
+- [GHCR package](https://github.com/vm75/droidtv-remote/pkgs/container/droidtv-remote)
+- [Issue tracker](https://github.com/vm75/droidtv-remote/issues)
+- [License](https://github.com/vm75/droidtv-remote/blob/main/LICENSE)

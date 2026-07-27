@@ -1,27 +1,18 @@
-FROM python:3.11-slim
+FROM golang:1.23-alpine AS build
 
+WORKDIR /src
+COPY go.mod ./
+COPY server/ ./server/
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /droidtv-remote ./server
+
+FROM scratch
 WORKDIR /app
+COPY --from=build /droidtv-remote /app/droidtv-remote
+COPY VERSION /app/VERSION
+COPY client/ /app/client/
 
-# Install dependencies
-COPY server/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Create data directory
-RUN mkdir -p data
-
-# Copy application files
-COPY VERSION .
-COPY server/server.py ./server/
-# We don't copy certificates because they will be generated if missing,
-# but it's better to mount them as a volume to persist pairing.
-COPY client/ ./client/
-
-# Configure server port
 ARG SERVER_PORT=7503
 ENV SERVER_PORT=${SERVER_PORT}
-
-# Expose the server port
 EXPOSE ${SERVER_PORT}
-
-# Run the server
-CMD ["python", "server/server.py"]
+VOLUME ["/app/data"]
+ENTRYPOINT ["/app/droidtv-remote"]
