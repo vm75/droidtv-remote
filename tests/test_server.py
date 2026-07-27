@@ -107,11 +107,12 @@ class MultiTvServerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_launcher_crud_icon_upload_and_tv_availability(self):
         app = web.Application(client_max_size=server.MAX_ICON_BYTES + 65536)
+        app.router.add_put('/api/tvs/{tv_id}/apps', server.tv_apps_handler)
         app.router.add_get('/api/apps', server.apps_handler)
         app.router.add_post('/api/apps', server.add_app_handler)
+        app.router.add_put('/api/apps/reorder', server.reorder_apps_handler)
         app.router.add_put('/api/apps/{app_id}', server.update_app_handler)
         app.router.add_delete('/api/apps/{app_id}', server.delete_app_handler)
-        app.router.add_put('/api/tvs/{tv_id}/apps', server.tv_apps_handler)
         client = TestClient(TestServer(app))
         await client.start_server()
         try:
@@ -154,6 +155,19 @@ class MultiTvServerTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(icon_path.exists())
             self.assertTrue(replacement_icon_path.exists())
 
+            create_form2 = FormData()
+            create_form2.add_field('name', 'YouTube')
+            create_form2.add_field('package_id', 'com.google.android.youtube.tv')
+            create_response2 = await client.post('/api/apps', data=create_form2)
+            self.assertEqual(create_response2.status, 201)
+            app_id2 = (await create_response2.json())["app"]["id"]
+
+            reorder_response = await client.put(
+                '/api/apps/reorder', json={"app_ids": [app_id2, app_id]}
+            )
+            self.assertEqual(reorder_response.status, 200)
+            self.assertEqual(list(server.app_registry.keys()), [app_id2, app_id])
+
             server.tv_registry = {
                 "living": {
                     "id": "living",
@@ -163,16 +177,17 @@ class MultiTvServerTests(unittest.IsolatedAsyncioTestCase):
                 }
             }
             availability_response = await client.put(
-                '/api/tvs/living/apps', json={"app_ids": [app_id]}
+                '/api/tvs/living/apps', json={"app_ids": [app_id, app_id2]}
             )
             self.assertEqual(availability_response.status, 200)
-            self.assertEqual(server.tv_registry["living"]["app_ids"], [app_id])
-            self.assertEqual([app["id"] for app in server.apps_for_tv("living")], [app_id])
+            self.assertEqual(server.tv_registry["living"]["app_ids"], [app_id, app_id2])
+            self.assertEqual([app["id"] for app in server.apps_for_tv("living")], [app_id, app_id2])
 
             delete_response = await client.delete(f'/api/apps/{app_id}')
             self.assertEqual(delete_response.status, 200)
             self.assertFalse(replacement_icon_path.exists())
-            self.assertEqual(server.tv_registry["living"]["app_ids"], [])
+            self.assertEqual(server.tv_registry["living"]["app_ids"], [app_id2])
+            await client.delete(f'/api/apps/{app_id2}')
         finally:
             await client.close()
 
@@ -414,6 +429,21 @@ class MultiTvServerTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict("os.environ", {"SERVER_PORT": "invalid"}, clear=True):
             server.config = {}
             self.assertEqual(server.get_server_port(), 7503)
+
+    async def test_pwa_entry_assets_disable_http_cache(self):
+        app = web.Application()
+        app.router.add_get('/', server.index_handler)
+        for path in ('/app.js', '/sw.js', '/manifest.json', '/reset.html'):
+            app.router.add_get(path, server.pwa_asset_handler)
+        client = TestClient(TestServer(app))
+        await client.start_server()
+        try:
+            for path in ('/', '/app.js', '/sw.js', '/manifest.json', '/reset.html'):
+                response = await client.get(path)
+                self.assertEqual(response.status, 200)
+                self.assertEqual(response.headers['Cache-Control'], 'no-cache, no-store, must-revalidate')
+        finally:
+            await client.close()
 
 
 if __name__ == "__main__":

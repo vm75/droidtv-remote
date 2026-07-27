@@ -1,10 +1,19 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+
+const appSource = fs.readFileSync(require.resolve('../client/app.js'), 'utf8');
+
+// The installed PWA must keep parsing on older mobile WebViews that do not
+// support optional chaining or nullish coalescing. A parse failure leaves the
+// application shell completely empty.
+assert.doesNotMatch(appSource, /\?\.|\?\?/);
 
 const mountedCallbacks = [];
 const intervalCallbacks = [];
 const connectRequests = [];
 const tvAppRequests = [];
 const appSaveRequests = [];
+const appReorderRequests = [];
 let failNextStatus = false;
 let exposed;
 
@@ -73,6 +82,18 @@ global.fetch = async (url, options = {}) => {
                 icon: ''
             }
         }, 201);
+    }
+    if (url === 'api/apps/reorder' && options.method === 'PUT') {
+        const payload = JSON.parse(options.body);
+        appReorderRequests.push(payload);
+        return response({
+            apps: payload.app_ids.map(id => ({
+                id,
+                name: id === 'youtube' ? 'YouTube' : 'Netflix',
+                package_id: id === 'youtube' ? 'com.google.android.youtube.tv' : 'com.netflix.ninja',
+                icon: ''
+            }))
+        });
     }
     if (url === 'api/apps') {
         return response({
@@ -163,6 +184,18 @@ mountedCallbacks[0]();
         name: 'Plex',
         packageId: 'com.plexapp.android'
     });
+
+    // Test TV app reordering (moving apps)
+    exposed.configuredAppIds.value = ['netflix', 'youtube'];
+    exposed.moveTvAppDown('netflix');
+    assert.deepEqual(exposed.configuredAppIds.value, ['youtube', 'netflix']);
+    exposed.moveTvAppUp('netflix');
+    assert.deepEqual(exposed.configuredAppIds.value, ['netflix', 'youtube']);
+
+    // Test Shared launcher reordering
+    await exposed.moveAppDown(0);
+    assert.deepEqual(appReorderRequests.at(-1), { app_ids: ['youtube', 'netflix'] });
+
     exposed.openRemoteView();
     assert.equal(exposed.currentView.value, 'remote');
 

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0f172a">
+    <title>Reset droidtv-remote</title>
+</head>
+
+<body style="margin: 0; padding: 2rem; color: white; background: #0f172a; font-family: sans-serif;">
+    <main>
+        <h1>Resetting droidtv-remote</h1>
+        <p id="status">Removing the previous PWA cache…</p>
+    </main>
+    <script>
+        (async () => {
+            const basePath = new URL('./', window.location.href).pathname;
+            const registrations = 'serviceWorker' in navigator
+                ? await navigator.serviceWorker.getRegistrations()
+                : [];
+            await Promise.all(
+                registrations
+                    .filter(registration => new URL(registration.scope).pathname === basePath)
+                    .map(registration => registration.unregister())
+            );
+
+            if ('caches' in window) {
+                const cacheNames = await caches.keys();
+                await Promise.all(
+                    cacheNames
+                        .filter(cacheName => cacheName.startsWith('droidtv-remote-'))
+                        .map(cacheName => caches.delete(cacheName))
+                );
+            }
+
+            document.getElementById('status').textContent = 'Reset complete. Reloading…';
+            window.location.replace('./?v=__VERSION__&reset=' + Date.now());
+        })().catch(error => {
+            document.getElementById('status').textContent =
+                'Reset failed: ' + error.message;
+        });
+    </script>
+</body>
+
+</html>

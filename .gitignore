@@ -7,7 +7,7 @@ venv/
 .env
 
 # Configuration & Secrets
-data/
+dev/
 client_info.txt
 
 # OS Files

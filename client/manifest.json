@@ -2,7 +2,7 @@
     "name": "droidtv-remote",
     "short_name": "DroidRemote",
     "description": "Control Android TVs and configure shared app launchers from your phone or browser",
-    "start_url": ".",
+    "start_url": ".?v=__VERSION__",
     "display": "standalone",
     "background_color": "#0f172a",
     "theme_color": "#0f172a",

@@ -22,6 +22,11 @@
 
         # Don't buffer responses
         proxy_buffering off;
+        # Never let a browser profile retain an old PWA release.
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
+
 
         # 1. Force Nginx to support byte-range requests (essential for seeking)
         proxy_force_ranges on;
@@ -42,22 +47,6 @@
         proxy_set_header X-Forwarded-Proto $scheme;
 
         # Force no caching of service worker
-        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
-        add_header Pragma "no-cache" always;
-        add_header Expires "0" always;
-        proxy_buffering off;
-    }
-
-    # HTML files with no-cache
-    location ~ ^/remote/.*\.html$ {
-        rewrite ^/remote/(.*)$ /$1 break;
-
-        proxy_pass http://localhost:7503;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
         add_header Cache-Control "no-cache, no-store, must-revalidate" always;
         add_header Pragma "no-cache" always;
         add_header Expires "0" always;

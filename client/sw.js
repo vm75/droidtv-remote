@@ -1,9 +1,9 @@
-const CACHE_NAME = 'droidtv-remote-v0.3.0';
+const CACHE_NAME = 'droidtv-remote-v__VERSION__';
 const ASSETS = [
-    './',
+    './?v=__VERSION__',
     'index.html',
-    'app.js',
-    'manifest.json',
+    'app.js?v=__VERSION__',
+    'manifest.json?v=__VERSION__',
     'icon.svg',
     'https://cdn.tailwindcss.com/',
     'https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css',
@@ -61,22 +61,18 @@ self.addEventListener('fetch', (event) => {
     }
 
     event.respondWith(
-        caches.match(event.request).then((cachedResponse) => {
-            const fetchOptions = event.request.url.includes('tailwindcss.com') ? { mode: 'no-cors' } : {};
-
-            const fetchPromise = fetch(event.request, fetchOptions).then((networkResponse) => {
+        fetch(event.request, event.request.url.includes('tailwindcss.com') ? { mode: 'no-cors' } : {})
+            .then(async (networkResponse) => {
                 if (networkResponse && (networkResponse.type === 'opaque' || networkResponse.status === 200)) {
-                    caches.open(CACHE_NAME).then((cache) => {
-                        cache.put(event.request, networkResponse.clone());
-                    });
+                    const cache = await caches.open(CACHE_NAME);
+                    await cache.put(event.request, networkResponse.clone());
                 }
                 return networkResponse;
-            }).catch(() => {
-                return cachedResponse;
-            });
-
-            return cachedResponse || fetchPromise;
-        })
+            })
+            .catch(async () => {
+                const cache = await caches.open(CACHE_NAME);
+                return cache.match(event.request);
+            })
     );
 });
 

@@ -141,13 +141,13 @@ createApp({
             const storedTvId = getStoredTvId();
             const storedExists = tvs.value.some(tv => tv.id === storedTvId);
             if (!currentExists) {
-                selectedTvId.value = storedExists ? storedTvId : (tvs.value[0]?.id || '');
+                selectedTvId.value = storedExists ? storedTvId : (tvs.value[0] ? tvs.value[0].id : '');
             }
             rememberSelectedTv(selectedTvId.value);
-            tvName.value = selectedTv.value?.name || 'No TV selected';
+            tvName.value = selectedTv.value ? selectedTv.value.name : 'No TV selected';
             const configuredTvExists = tvs.value.some(tv => tv.id === configuredTvId.value);
             if (!configuredTvExists) {
-                configuredTvId.value = selectedTvId.value || tvs.value[0]?.id || '';
+                configuredTvId.value = selectedTvId.value || (tvs.value[0] ? tvs.value[0].id : '');
             }
             syncConfiguredApps();
         };
@@ -172,7 +172,7 @@ createApp({
                 connectionStatus.value = Boolean(data.connected);
                 connecting.value = Boolean(data.connecting);
                 pairingInProgress.value = Boolean(data.pairing_in_progress);
-                tvName.value = data.tv_name || selectedTv.value?.name || 'Android TV';
+                tvName.value = data.tv_name || (selectedTv.value ? selectedTv.value.name : 'Android TV');
                 apps.value = data.apps || [];
                 version.value = data.version || version.value;
 
@@ -238,7 +238,7 @@ createApp({
             showPairingModal.value = false;
             connectionStatus.value = false;
             pairingInProgress.value = false;
-            tvName.value = selectedTv.value?.name || 'Android TV';
+            tvName.value = selectedTv.value ? selectedTv.value.name : 'Android TV';
             await checkStatus();
             if (changed || !connectionStatus.value) await connectToTV();
         };
@@ -312,6 +312,23 @@ createApp({
             configuredAppIds.value = tv ? [...(tv.app_ids || [])] : [];
         };
 
+        const orderedTvApps = computed(() => {
+            const enabledMap = new Map(allApps.value.map(app => [app.id, app]));
+            const result = [];
+            for (const id of configuredAppIds.value) {
+                if (enabledMap.has(id)) {
+                    result.push({ app: enabledMap.get(id), enabled: true });
+                    enabledMap.delete(id);
+                }
+            }
+            for (const app of allApps.value) {
+                if (enabledMap.has(app.id)) {
+                    result.push({ app, enabled: false });
+                }
+            }
+            return result;
+        });
+
         const loadApps = async () => {
             const response = await fetch('api/apps');
             const data = await response.json();
@@ -322,7 +339,7 @@ createApp({
         const openLauncherView = async () => {
             currentView.value = 'apps';
             showTvMenu.value = false;
-            configuredTvId.value = selectedTvId.value || tvs.value[0]?.id || '';
+            configuredTvId.value = selectedTvId.value || (tvs.value[0] ? tvs.value[0].id : '');
             try {
                 await Promise.all([loadApps(), refreshTvs()]);
                 syncConfiguredApps();
@@ -392,7 +409,7 @@ createApp({
         };
 
         const handleAppIconChange = (event) => {
-            appIconFile.value = event.target.files?.[0] || null;
+            appIconFile.value = event.target.files && event.target.files[0] || null;
             if (appIconFile.value) removeAppIcon.value = false;
         };
 
@@ -449,6 +466,62 @@ createApp({
             } catch (error) {
                 showError(error.message || 'Failed to delete app launcher');
             }
+        };
+
+        const moveTvAppUp = (appId) => {
+            const index = configuredAppIds.value.indexOf(appId);
+            if (index <= 0) return;
+            const items = [...configuredAppIds.value];
+            const temp = items[index];
+            items[index] = items[index - 1];
+            items[index - 1] = temp;
+            configuredAppIds.value = items;
+        };
+
+        const moveTvAppDown = (appId) => {
+            const index = configuredAppIds.value.indexOf(appId);
+            if (index < 0 || index >= configuredAppIds.value.length - 1) return;
+            const items = [...configuredAppIds.value];
+            const temp = items[index];
+            items[index] = items[index + 1];
+            items[index + 1] = temp;
+            configuredAppIds.value = items;
+        };
+
+        const saveAppOrder = async () => {
+            try {
+                const response = await fetch('api/apps/reorder', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ app_ids: allApps.value.map(a => a.id) })
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Failed to reorder app launchers');
+                allApps.value = data.apps || [];
+                if (selectedTvId.value) await checkStatus();
+            } catch (error) {
+                showError(error.message || 'Failed to reorder app launchers');
+            }
+        };
+
+        const moveAppUp = async (index) => {
+            if (index <= 0 || index >= allApps.value.length) return;
+            const items = [...allApps.value];
+            const temp = items[index];
+            items[index] = items[index - 1];
+            items[index - 1] = temp;
+            allApps.value = items;
+            await saveAppOrder();
+        };
+
+        const moveAppDown = async (index) => {
+            if (index < 0 || index >= allApps.value.length - 1) return;
+            const items = [...allApps.value];
+            const temp = items[index];
+            items[index] = items[index + 1];
+            items[index + 1] = temp;
+            allApps.value = items;
+            await saveAppOrder();
         };
 
         /**
@@ -859,8 +932,10 @@ createApp({
 
                             if (event.data) {
                                 const textLength = keyboardText.value.length;
-                                const start = Math.max(0, Math.min(event.data.start ?? textLength, textLength));
-                                const end = Math.max(start, Math.min(event.data.end ?? start, textLength));
+                                const eventStart = event.data.start == null ? textLength : event.data.start;
+                                const start = Math.max(0, Math.min(eventStart, textLength));
+                                const eventEnd = event.data.end == null ? start : event.data.end;
+                                const end = Math.max(start, Math.min(eventEnd, textLength));
                                 keyboardInput.value.setSelectionRange(start, end);
                             }
 
@@ -979,7 +1054,7 @@ createApp({
 
             // Register service worker for PWA
             if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.register('sw.js?v=6').then((registration) => {
+                navigator.serviceWorker.register('sw.js?v=__VERSION__').then((registration) => {
                     console.log('Service worker registered successfully with scope:', registration.scope);
 
                     // Check for updates
@@ -1057,6 +1132,7 @@ createApp({
             allApps,
             configuredTvId,
             configuredAppIds,
+            orderedTvApps,
             savingTvApps,
             showAppModal,
             editingAppId,
@@ -1088,6 +1164,11 @@ createApp({
             handleAppIconChange,
             saveApp,
             deleteApp,
+            moveTvAppUp,
+            moveTvAppDown,
+            moveAppUp,
+            moveAppDown,
+            saveAppOrder,
             handleKeyboardInput,
             handleKeyDown,
             sendSpecialKey,

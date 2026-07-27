@@ -1,0 +1,46 @@
+# Nginx example for hosting droidtv-remote at https://remote.example.com/
+# Replace the server name, certificate paths, and proxy_pass target.
+#
+# When nginx runs on the same host as droidtv-remote, 127.0.0.1:7503 is
+# appropriate. When nginx runs in a container, use a reachable service name
+# or host gateway instead, for example http://droidtv-remote:7503.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name remote.example.com;
+
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name remote.example.com;
+    client_max_body_size 3m;
+
+    ssl_certificate /etc/letsencrypt/live/remote.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/remote.example.com/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:7503;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+        proxy_buffering off;
+
+        # Prevent normal browser profiles from retaining an old PWA release.
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
+    }
+}

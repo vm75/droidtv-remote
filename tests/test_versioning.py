@@ -5,12 +5,26 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 class VersioningTests(unittest.TestCase):
-    def test_service_worker_cache_matches_project_version(self):
+    def test_client_files_use_version_placeholder(self):
+        """All client files must use __VERSION__ instead of a hard-coded version."""
         version = (ROOT / "VERSION").read_text().strip()
-        service_worker = (ROOT / "client/sw.js").read_text()
-        cache_line = next(line for line in service_worker.splitlines() if line.startswith("const CACHE_NAME"))
-        cache_name = cache_line.split("=", 1)[1].strip().rstrip(";").strip(chr(39) + chr(34))
-        self.assertEqual(cache_name, f"droidtv-remote-v{version}")
+        files_with_placeholder = [
+            "client/sw.js",
+            "client/app.js",
+            "client/index.html",
+            "client/manifest.json",
+            "client/reset.html",
+        ]
+        for rel_path in files_with_placeholder:
+            source = (ROOT / rel_path).read_text()
+            self.assertIn(
+                "__VERSION__", source,
+                f"{rel_path} must contain __VERSION__ placeholder"
+            )
+            self.assertNotIn(
+                version, source,
+                f"{rel_path} must not contain the hard-coded version '{version}'"
+            )
 
 
 if __name__ == "__main__":

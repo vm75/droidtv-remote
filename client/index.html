@@ -8,7 +8,7 @@
     <title>droidtv-remote</title>
 
     <!-- PWA Manifest -->
-    <link rel="manifest" href="manifest.json">
+    <link rel="manifest" href="manifest.json?v=__VERSION__">
 
     <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="icon.svg">
@@ -56,8 +56,8 @@
 
         /* Button press effect */
         .remote-btn:active {
-            transform: scale(0.95);
-            box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.3);
+            filter: brightness(0.7);
+            box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.4);
         }
 
         /* Glassmorphism effect */
@@ -75,6 +75,26 @@
         .hide-scrollbar {
             -ms-overflow-style: none;
             scrollbar-width: none;
+        }
+
+        /* Thin visible scrollbar for launcher pane */
+        .launcher-scroll::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+
+        .launcher-scroll::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .launcher-scroll::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 2px;
+        }
+
+        .launcher-scroll {
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
         }
 
         /* Pulse animation for connection status */
@@ -192,25 +212,27 @@
 
         <!-- Main Remote Control -->
         <main v-if="currentView === 'remote'" class="max-w-md mx-auto px-4 py-6 pb-24">
-            <!-- Quick Launch - Single Row with Horizontal Scroll -->
-            <div v-if="apps.length &gt; 0" class="mb-6">
-                <div class="flex gap-3 overflow-x-auto hide-scrollbar pb-2">
-                    <button v-for="app in apps" :key="app.id" @click="launchApp(app.id)"
-                        class="remote-btn flex-shrink-0 w-16 h-16 glass rounded-xl shadow-lg hover:bg-slate-700 flex items-center justify-center p-2 overflow-hidden">
-                        <!-- Custom Image Icon -->
-                        <img v-if="app.icon && app.icon.includes('.')" :src="app.icon"
-                            class="w-full h-full object-contain" :alt="app.name">
+            <!-- Quick Launch - Up to 2 Rows with Vertical Scroll -->
+            <div v-if="apps.length > 0" class="mb-6">
+                <div class="glass rounded-2xl p-3 shadow-lg">
+                    <div class="flex flex-wrap gap-3 overflow-y-auto max-h-[140px] launcher-scroll pr-1">
+                        <button v-for="app in apps" :key="app.id" @click="launchApp(app.id)"
+                            class="remote-btn flex-shrink-0 w-16 h-16 bg-slate-800 hover:bg-slate-700 rounded-xl shadow-lg flex items-center justify-center p-2 overflow-hidden">
+                            <!-- Custom Image Icon -->
+                            <img v-if="app.icon && app.icon.includes('.')" :src="app.icon"
+                                class="w-full h-full object-contain rounded-lg" :alt="app.name">
 
-                        <!-- Material Design Icon -->
-                        <i v-else-if="app.icon && app.icon.trim()" :class="['mdi', app.icon, 'text-3xl']"
-                            class="text-white"></i>
+                            <!-- Material Design Icon -->
+                            <i v-else-if="app.icon && app.icon.trim()" :class="['mdi', app.icon, 'text-3xl']"
+                                class="text-white"></i>
 
-                        <!-- Text Fallback -->
-                        <span v-else
-                            class="text-[10px] font-bold text-white text-center leading-tight line-clamp-2 uppercase">
-                            {{ app.name }}
-                        </span>
-                    </button>
+                            <!-- Text Fallback -->
+                            <span v-else
+                                class="text-[10px] font-bold text-white text-center leading-tight line-clamp-2 uppercase">
+                                {{ app.name }}
+                            </span>
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -224,13 +246,13 @@
                             <!-- Menu Button -->
                             <button @click="sendKey('KEYCODE_MENU')"
                                 class="remote-btn w-11 h-11 bg-gradient-to-br from-gray-700 to-gray-800 rounded-full shadow-lg hover:from-gray-600 text-white flex items-center justify-center">
-                                <i class="mdi mdi-menu text-xl"></i>
+                                <i class="mdi mdi-menu text-2xl"></i>
                             </button>
 
                             <!-- Back Button -->
                             <button @click="sendKey('KEYCODE_BACK')"
                                 class="remote-btn w-11 h-11 bg-gradient-to-br from-gray-700 to-gray-800 rounded-full shadow-lg hover:from-gray-600 text-white flex items-center justify-center">
-                                <i class="mdi mdi-arrow-left text-xl"></i>
+                                <i class="mdi mdi-arrow-left text-2xl"></i>
                             </button>
                         </div>
 
@@ -277,13 +299,13 @@
                             <!-- Settings Button -->
                             <button @click="sendKey('KEYCODE_SETTINGS')"
                                 class="remote-btn w-11 h-11 bg-gradient-to-br from-gray-700 to-gray-800 rounded-full shadow-lg hover:from-gray-600 text-white flex items-center justify-center">
-                                <i class="mdi mdi-cog text-xl"></i>
+                                <i class="mdi mdi-cog text-2xl"></i>
                             </button>
 
                             <!-- Home Button -->
                             <button @click="sendKey('KEYCODE_HOME')"
                                 class="remote-btn w-11 h-11 bg-gradient-to-br from-gray-700 to-gray-800 rounded-full shadow-lg hover:from-gray-600 text-white flex items-center justify-center">
-                                <i class="mdi mdi-home text-xl"></i>
+                                <i class="mdi mdi-home text-2xl"></i>
                             </button>
                         </div>
                     </div>
@@ -362,16 +384,11 @@
             </div>
 
             <!-- Keyboard Input Section (Permanent) -->
-            <div class="glass rounded-3xl p-6 mb-6 shadow-2xl">
-                <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                        <i class="mdi mdi-keyboard text-indigo-400"></i>
-                        Keyboard Input
-                    </h2>
-                </div>
-                <div class="relative mb-4">
+            <div class="glass rounded-3xl p-4 mb-6 shadow-2xl">
+                <div class="relative">
+                    <i class="mdi mdi-keyboard text-indigo-400 text-xl absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"></i>
                     <input v-model="keyboardText" ref="keyboardInput" type="text" placeholder="Start typing..."
-                        class="w-full pl-4 pr-12 py-3 bg-slate-800 text-white rounded-xl border-2 border-indigo-500 focus:border-indigo-400 focus:outline-none"
+                        class="w-full pl-11 pr-10 py-3 bg-slate-800 text-white rounded-xl border-2 border-indigo-500 focus:border-indigo-400 focus:outline-none"
                         @input="handleKeyboardInput" @keydown="handleKeyDown" autocomplete="off" autocorrect="off"
                         autocapitalize="none" spellcheck="false">
                     <button v-if="keyboardText" @click="clearKeyboardText"
@@ -398,18 +415,34 @@
                     class="w-full px-4 py-3 mb-4 bg-slate-800 text-white rounded-xl border border-slate-600 focus:border-blue-400 focus:outline-none">
                     <option v-for="tv in tvs" :key="tv.id" :value="tv.id">{{ tv.name }}</option>
                 </select>
-                <div v-if="configuredTvId && allApps.length" class="space-y-2 max-h-64 overflow-y-auto hide-scrollbar mb-4">
-                    <label v-for="app in allApps" :key="app.id"
-                        class="flex items-center gap-3 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 cursor-pointer">
-                        <input v-model="configuredAppIds" type="checkbox" :value="app.id"
-                            class="w-5 h-5 accent-blue-600">
-                        <span class="w-9 h-9 rounded-lg bg-slate-900 flex items-center justify-center overflow-hidden flex-shrink-0">
-                            <img v-if="app.icon && app.icon.includes('.')" :src="app.icon" :alt="app.name"
-                                class="w-full h-full object-contain">
-                            <i v-else-if="app.icon" :class="['mdi', app.icon, 'text-xl', 'text-white']"></i>
-                            <span v-else class="text-[10px] font-bold text-gray-300">{{ app.name.slice(0, 2).toUpperCase() }}</span>
-                        </span>
-                        <span class="text-sm text-white truncate">{{ app.name }}</span>
+                <div v-if="configuredTvId && allApps.length" class="space-y-2 max-h-72 overflow-y-auto hide-scrollbar mb-4">
+                    <label v-for="item in orderedTvApps" :key="item.app.id"
+                        class="flex items-center justify-between px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 cursor-pointer">
+                        <div class="flex items-center gap-3 min-w-0 flex-1">
+                            <input v-model="configuredAppIds" type="checkbox" :value="item.app.id"
+                                class="w-5 h-5 accent-blue-600 flex-shrink-0">
+                            <span class="w-9 h-9 rounded-lg bg-slate-900 flex items-center justify-center overflow-hidden flex-shrink-0">
+                                <img v-if="item.app.icon && item.app.icon.includes('.')" :src="item.app.icon" :alt="item.app.name"
+                                    class="w-full h-full object-contain">
+                                <i v-else-if="item.app.icon" :class="['mdi', item.app.icon, 'text-xl', 'text-white']"></i>
+                                <span v-else class="text-[10px] font-bold text-gray-300">{{ item.app.name.slice(0, 2).toUpperCase() }}</span>
+                            </span>
+                            <span class="text-sm text-white truncate">{{ item.app.name }}</span>
+                        </div>
+                        <div v-if="item.enabled" class="flex items-center gap-1 ml-2 flex-shrink-0">
+                            <button type="button" @click.stop.prevent="moveTvAppUp(item.app.id)"
+                                :disabled="configuredAppIds.indexOf(item.app.id) === 0"
+                                :aria-label="`Move ${item.app.name} up`"
+                                class="w-8 h-8 rounded-lg text-gray-300 hover:text-white hover:bg-slate-600 flex items-center justify-center disabled:opacity-30 disabled:hover:bg-transparent">
+                                <i class="mdi mdi-chevron-up text-lg"></i>
+                            </button>
+                            <button type="button" @click.stop.prevent="moveTvAppDown(item.app.id)"
+                                :disabled="configuredAppIds.indexOf(item.app.id) === configuredAppIds.length - 1"
+                                :aria-label="`Move ${item.app.name} down`"
+                                class="w-8 h-8 rounded-lg text-gray-300 hover:text-white hover:bg-slate-600 flex items-center justify-center disabled:opacity-30 disabled:hover:bg-transparent">
+                                <i class="mdi mdi-chevron-down text-lg"></i>
+                            </button>
+                        </div>
                     </label>
                 </div>
                 <p v-else-if="!tvs.length" class="text-sm text-gray-400 text-center py-4">Add a TV before configuring availability.</p>
@@ -433,25 +466,35 @@
                     </button>
                 </div>
                 <div v-if="allApps.length" class="space-y-3">
-                    <article v-for="app in allApps" :key="app.id"
-                        class="glass rounded-2xl p-4 flex items-center gap-4 shadow-lg">
-                        <span class="w-14 h-14 rounded-xl bg-slate-800 flex items-center justify-center overflow-hidden flex-shrink-0">
+                    <article v-for="(app, index) in allApps" :key="app.id"
+                        class="glass rounded-2xl p-4 flex items-center gap-3 shadow-lg">
+                        <span class="w-12 h-12 rounded-xl bg-slate-800 flex items-center justify-center overflow-hidden flex-shrink-0">
                             <img v-if="app.icon && app.icon.includes('.')" :src="app.icon" :alt="app.name"
                                 class="w-full h-full object-contain">
-                            <i v-else-if="app.icon" :class="['mdi', app.icon, 'text-3xl', 'text-white']"></i>
+                            <i v-else-if="app.icon" :class="['mdi', app.icon, 'text-2xl', 'text-white']"></i>
                             <span v-else class="text-sm font-bold text-gray-300">{{ app.name.slice(0, 2).toUpperCase() }}</span>
                         </span>
                         <div class="flex-1 min-w-0">
                             <h3 class="text-white font-semibold truncate">{{ app.name }}</h3>
                             <p class="text-xs text-gray-500 truncate">{{ app.package_id }}</p>
                         </div>
-                        <div class="flex items-center gap-1">
-                            <button @click="openEditApp(app)" :aria-label="`Edit ${app.name}`"
-                                class="w-10 h-10 rounded-full text-gray-300 hover:text-white hover:bg-slate-700 flex items-center justify-center">
+                        <div class="flex items-center gap-1 flex-shrink-0">
+                            <button type="button" @click="moveAppUp(index)" :disabled="index === 0"
+                                :aria-label="`Move ${app.name} up`"
+                                class="w-8 h-8 rounded-lg text-gray-300 hover:text-white hover:bg-slate-700 flex items-center justify-center disabled:opacity-30 disabled:hover:bg-transparent">
+                                <i class="mdi mdi-chevron-up text-lg"></i>
+                            </button>
+                            <button type="button" @click="moveAppDown(index)" :disabled="index === allApps.length - 1"
+                                :aria-label="`Move ${app.name} down`"
+                                class="w-8 h-8 rounded-lg text-gray-300 hover:text-white hover:bg-slate-700 flex items-center justify-center disabled:opacity-30 disabled:hover:bg-transparent">
+                                <i class="mdi mdi-chevron-down text-lg"></i>
+                            </button>
+                            <button type="button" @click="openEditApp(app)" :aria-label="`Edit ${app.name}`"
+                                class="w-8 h-8 rounded-lg text-gray-300 hover:text-white hover:bg-slate-700 flex items-center justify-center">
                                 <i class="mdi mdi-pencil-outline"></i>
                             </button>
-                            <button @click="deleteApp(app)" :aria-label="`Delete ${app.name}`"
-                                class="w-10 h-10 rounded-full text-gray-400 hover:text-red-400 hover:bg-red-950 flex items-center justify-center">
+                            <button type="button" @click="deleteApp(app)" :aria-label="`Delete ${app.name}`"
+                                class="w-8 h-8 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-950 flex items-center justify-center">
                                 <i class="mdi mdi-delete-outline"></i>
                             </button>
                         </div>
@@ -623,7 +666,7 @@
     </div>
 
     <!-- Load Vue App -->
-    <script src="app.js"></script>
+    <script src="app.js?v=__VERSION__"></script>
 </body>
 
 </html>

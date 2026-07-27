@@ -315,14 +315,14 @@ def serialize_app(app):
 
 
 def apps_for_tv(tv_id):
-    """Return common launchers enabled for one TV, preserving common order."""
+    """Return common launchers enabled for one TV, preserving TV-specific app order."""
     if tv_id not in tv_registry:
         return []
-    enabled_ids = set(tv_registry[tv_id].get("app_ids", []))
+    app_ids = tv_registry[tv_id].get("app_ids", [])
     return [
-        serialize_app(app)
-        for app_id, app in app_registry.items()
-        if app_id in enabled_ids
+        serialize_app(app_registry[app_id])
+        for app_id in app_ids
+        if app_id in app_registry
     ]
 
 
@@ -786,6 +786,30 @@ async def delete_app_handler(request):
     return web.json_response({"status": "deleted", "app_id": app_id})
 
 
+async def reorder_apps_handler(request):
+    """Reorder common launchers in the registry."""
+    global app_registry
+    data = await request.json()
+    requested_ids = data.get("app_ids")
+    if not isinstance(requested_ids, list):
+        return web.json_response({"error": "app_ids must be a list"}, status=400)
+    if set(requested_ids) != set(app_registry.keys()):
+        return web.json_response(
+            {"error": "app_ids must contain all existing app launcher IDs"}, status=400
+        )
+
+    new_registry = {}
+    for app_id in requested_ids:
+        if app_id in app_registry:
+            new_registry[app_id] = app_registry[app_id]
+    app_registry = new_registry
+    save_app_registry()
+    logger.info("Reordered app launchers")
+    return web.json_response({
+        "apps": [serialize_app(app) for app in app_registry.values()]
+    })
+
+
 async def tv_apps_handler(request):
     """Set which common launchers are available on one TV."""
     tv_id = request.match_info["tv_id"]
@@ -1104,8 +1128,33 @@ async def on_cleanup(app):
 
 async def index_handler(request):
     """Serve the index.html file"""
-    index_file = BASE_DIR / 'client' / 'index.html'
-    return web.FileResponse(index_file)
+    return pwa_file_response('index.html')
+
+
+_PWA_CONTENT_TYPES = {
+    '.html': 'text/html',
+    '.js': 'application/javascript',
+    '.json': 'application/json',
+}
+
+
+def pwa_file_response(filename):
+    """Serve PWA entry assets with __VERSION__ replaced by the real version."""
+    filepath = BASE_DIR / 'client' / filename
+    body = filepath.read_text(encoding='utf-8').replace('__VERSION__', __version__)
+    ext = Path(filename).suffix
+    content_type = _PWA_CONTENT_TYPES.get(ext, 'application/octet-stream')
+    return web.Response(
+        text=body,
+        content_type=content_type,
+        headers={'Cache-Control': 'no-cache, no-store, must-revalidate'},
+    )
+
+async def pwa_asset_handler(request):
+    """Serve a PWA entry asset that must update with each release."""
+    return pwa_file_response(request.path.lstrip('/'))
+
+
 
 
 def create_app():
@@ -1121,11 +1170,17 @@ def create_app():
     app.router.add_get('/', index_handler)
     app.router.add_get('/api/status', status_handler)
     app.router.add_get('/api/tvs', tvs_handler)
+    app.router.add_get('/index.html', index_handler)
+    app.router.add_get('/app.js', pwa_asset_handler)
+    app.router.add_get('/sw.js', pwa_asset_handler)
+    app.router.add_get('/manifest.json', pwa_asset_handler)
+    app.router.add_get('/reset.html', pwa_asset_handler)
     app.router.add_post('/api/tvs', add_tv_handler)
     app.router.add_delete('/api/tvs/{tv_id}', forget_tv_handler)
     app.router.add_put('/api/tvs/{tv_id}/apps', tv_apps_handler)
     app.router.add_get('/api/apps', apps_handler)
     app.router.add_post('/api/apps', add_app_handler)
+    app.router.add_put('/api/apps/reorder', reorder_apps_handler)
     app.router.add_put('/api/apps/{app_id}', update_app_handler)
     app.router.add_delete('/api/apps/{app_id}', delete_app_handler)
     app.router.add_post('/api/connect', connect_handler)

@@ -25,6 +25,7 @@
 - Automatic connection when the PWA opens or its selected TV changes
 - Connection, connecting, pairing, and disconnected status icons
 - Automatic reconnection after an active TV connection drops
+- Mobile-compatible JavaScript for older installed PWA WebViews
 - Installable PWA with reverse-proxy subpath support
 
 ## Installation
@@ -80,7 +81,8 @@ Open the **apps** button in the remote header to switch to the separate launcher
 - **Add** creates a launcher shared by all TVs. Enter its display name and Android package ID.
 - **Edit** changes the shared name, package ID, Material icon class, or uploaded icon.
 - **Delete** removes the launcher from the shared library and every TV.
-- **Available on TV** selects a TV and controls which shared launchers appear in that TV's remote view. Choose the launchers and press **Save TV apps**.
+- **Reorder** moves shared launchers up or down in the common library or per-TV available list.
+- **Available on TV** selects a TV, controls which shared launchers appear in that TV's remote view, and allows ordering their display sequence. Choose/reorder the launchers and press **Save TV apps**.
 
 Uploaded icons may be PNG, JPEG, WebP, or GIF and must be 2 MB or smaller. Uploaded files are validated and stored with generated names under `data/icons/`. A newly created launcher is not enabled automatically; select it for each appropriate TV. Newly added TVs initially enable all launchers currently in the shared library.
 
@@ -120,6 +122,8 @@ Common package IDs include:
 - YouTube: `com.google.android.youtube.tv`
 - Disney+: `com.disney.disneyplus`
 - Prime Video: `com.amazon.amazonvideo.livingroom`
+- OTT Navigator: `studio.scillarium.ottnavigator`
+- Apple TV: `com.apple.atve.androidtv.appletv`
 - Plex: `com.plexapp.android`
 - Spotify: `com.spotify.tv.android`
 
@@ -140,9 +144,9 @@ Run with host networking and mount `/app/data` persistently so the container can
 docker compose -f deploy/compose.yml up -d
 ```
 
-## Reverse proxy subpaths
+## Reverse proxies
 
-The API and PWA use relative URLs, and the server middleware accepts a stripped or retained subpath. Use `deploy/nginx_subfolder.example` as a starting point and serve the application over HTTPS for reliable PWA installation.
+The API and PWA use relative URLs and work at either a dedicated subdomain or a subpath. Use `deploy/nginx_subdomain.example` for a root-level host such as `https://remote.example.com/`, or `deploy/nginx_subfolder.example` for a path such as `https://example.com/remote/`. Serve the application over HTTPS for reliable PWA installation.
 
 ## Development and verification
 
@@ -151,11 +155,18 @@ python -m py_compile server/server.py
 node --check client/app.js
 node --check client/sw.js
 node tests/test_app.js
+node tests/test_sw.js
 python -m unittest discover -s tests -v
 python server/server.py
 ```
 
+`make test` runs the syntax checks and automated PWA/backend test suites, preferring `.venv/bin/python` when it exists. Set `PYTHON` to use another interpreter.
+
 When TVs are available, manually verify adding/pairing more than one TV, switching command targets, automatic connection after opening the PWA, launcher add/edit/delete and icon upload, per-TV launcher filtering, reconnection after a TV restart, forgetting and re-pairing, IME events, and installation under the intended reverse-proxy path.
+
+PWA entry assets use network-first updates with an offline fallback, and the server disables browser HTTP caching for the HTML, app script, manifest, and service worker. Versioned entry URLs let an installed PWA escape an older cache-first worker. If a previous install remains stale, open `reset.html` under the application subpath once; it unregisters only that subpath's service worker, removes only `droidtv-remote` caches, and reloads the current release.
+
+The nginx `proxy_pass` target must be reachable from the nginx process. `localhost:7503` is correct only when nginx can reach droidtv-remote on its own host network; use the service name or host gateway when nginx runs in another container. A `502 Bad Gateway` response means this upstream connection is unavailable, not that the PWA cache is stale.
 
 ## Security
 
@@ -169,7 +180,7 @@ The root `VERSION` value is shown in the PWA and returned by `/api/status`. It f
 - Minor: bug fixes and minor feature additions.
 - Major: large, breaking, or incompatible changes.
 
-When changing `VERSION`, update `client/sw.js` at the same time so its cache is exactly `droidtv-remote-v<version>`. This forces installed PWAs to refresh cached assets. The version-sync test catches mismatches, and release automation publishes tagged container images.
+Client files use a `__VERSION__` placeholder that the server substitutes with the real version at serve-time, so bumping `VERSION` is the only step needed. The version-placeholder test catches any file that still contains a hard-coded version, and release automation publishes tagged container images.
 
 ## License
 
