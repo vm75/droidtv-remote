@@ -1,6 +1,6 @@
 <div align="center">
 
-# 📺 droidtv-remote
+# <img src="https://raw.githubusercontent.com/vm75/droidtv-remote/main/client/icon.png" width="32" height="32" alt="📺 droidtv-remote logo"> droidtv-remote
 
 **A compact Go server and installable PWA for controlling multiple Android TV or Google TV devices.**
 
@@ -22,7 +22,7 @@
 - D-pad, media, volume, power, color keys, keyboard input, and direct app launching
 - Multiple TVs with independent persistent pairing credentials
 - Shared app launchers with uploaded icons and per-TV ordering
-- Automatic connection and reconnection
+- Automatic connection and reconnection while clients are active, auto-disconnecting after 5 minutes of inactivity
 - Reverse-proxy subdomain and subpath support
 - MCP tools for every REST capability at `/mcp`
 - Minimal static container image with no runtime package dependencies

@@ -30,13 +30,15 @@ var (
 )
 
 type TVState struct {
-	mu         sync.Mutex
-	remote     *Remote
-	connecting bool
-	pairing    bool
-	running    bool
-	cancel     context.CancelFunc
-	pairCode   chan string
+	mu                 sync.Mutex
+	remote             *Remote
+	connecting         bool
+	pairing            bool
+	running            bool
+	cancel             context.CancelFunc
+	pairCode           chan string
+	lastClientActivity time.Time
+	activeClients      int
 }
 
 type Event struct {
@@ -60,23 +62,24 @@ type eventBucket struct {
 }
 
 type Server struct {
-	root         string
-	version      string
-	config       Config
-	mu           sync.RWMutex
-	apps         map[string]*App
-	appOrder     []string
-	tvs          map[string]*TV
-	tvOrder      []string
-	states       map[string]*TVState
-	eventsMu     sync.Mutex
-	events       map[string]*eventBucket
-	mux          *http.ServeMux
-	eventTimeout time.Duration
+	root              string
+	version           string
+	config            Config
+	mu                sync.RWMutex
+	apps              map[string]*App
+	appOrder          []string
+	tvs               map[string]*TV
+	tvOrder           []string
+	states            map[string]*TVState
+	eventsMu          sync.Mutex
+	events            map[string]*eventBucket
+	mux               *http.ServeMux
+	eventTimeout      time.Duration
+	inactivityTimeout time.Duration
 }
 
 func NewServer(root, version string) (*Server, error) {
-	s := &Server{root: root, version: version, apps: map[string]*App{}, tvs: map[string]*TV{}, states: map[string]*TVState{}, events: map[string]*eventBucket{}, eventTimeout: 30 * time.Second}
+	s := &Server{root: root, version: version, apps: map[string]*App{}, tvs: map[string]*TV{}, states: map[string]*TVState{}, events: map[string]*eventBucket{}, eventTimeout: 30 * time.Second, inactivityTimeout: 5 * time.Minute}
 	s.config = loadConfig(filepath.Join(root, "data", "config.yaml"))
 	if err := s.loadApps(); err != nil {
 		return nil, err
@@ -277,6 +280,7 @@ func (s *Server) appsForTV(id string) []AppJSON {
 }
 
 func (s *Server) tvStatus(id string) map[string]any {
+	s.touchActivity(id)
 	s.mu.RLock()
 	t := s.tvs[id]
 	var copy TV
@@ -302,7 +306,37 @@ func randomID() (string, error) {
 	return hex.EncodeToString(b[:]), nil
 }
 
+func (s *Server) touchActivity(id string) {
+	if id == "" {
+		return
+	}
+	st := s.state(id)
+	st.mu.Lock()
+	st.lastClientActivity = time.Now()
+	st.mu.Unlock()
+}
+
+func (s *Server) beginClientSession(id string) func() {
+	if id == "" {
+		return func() {}
+	}
+	st := s.state(id)
+	st.mu.Lock()
+	st.activeClients++
+	st.lastClientActivity = time.Now()
+	st.mu.Unlock()
+	return func() {
+		st.mu.Lock()
+		if st.activeClients > 0 {
+			st.activeClients--
+		}
+		st.lastClientActivity = time.Now()
+		st.mu.Unlock()
+	}
+}
+
 func (s *Server) startConnection(id string) string {
+	s.touchActivity(id)
 	st := s.state(id)
 	st.mu.Lock()
 	defer st.mu.Unlock()
@@ -406,23 +440,55 @@ func (s *Server) initializeTV(ctx context.Context, id string, st *TVState) (*Rem
 }
 
 func (s *Server) monitor(ctx context.Context, id string, st *TVState, remote *Remote) {
-	select {
-	case err := <-remote.Done():
-		log.Printf("connection %s lost: %v", id, err)
-	case <-ctx.Done():
-		remote.Close()
-		st.mu.Lock()
-		st.running = false
-		st.remote = nil
-		st.mu.Unlock()
-		return
+	timeout := s.inactivityTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Minute
 	}
+	interval := timeout / 5
+	if interval < 10*time.Millisecond {
+		interval = 10 * time.Millisecond
+	} else if interval > 1*time.Second {
+		interval = 1 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	connectionLost := false
+	for !connectionLost {
+		select {
+		case err := <-remote.Done():
+			log.Printf("connection %s lost: %v", id, err)
+			connectionLost = true
+		case <-ctx.Done():
+			remote.Close()
+			st.mu.Lock()
+			st.running = false
+			st.remote = nil
+			st.mu.Unlock()
+			return
+		case <-ticker.C:
+			st.mu.Lock()
+			inactive := st.activeClients == 0 && !st.lastClientActivity.IsZero() && time.Since(st.lastClientActivity) >= timeout
+			st.mu.Unlock()
+			if inactive {
+				log.Printf("disconnecting %s due to inactivity", id)
+				remote.Close()
+				st.mu.Lock()
+				st.running = false
+				st.remote = nil
+				st.mu.Unlock()
+				return
+			}
+		}
+	}
+
 	st.mu.Lock()
 	if st.remote == remote {
 		st.remote = nil
 	}
 	st.connecting = false
 	st.mu.Unlock()
+
 	select {
 	case <-time.After(5 * time.Second):
 	case <-ctx.Done():
@@ -431,8 +497,20 @@ func (s *Server) monitor(ctx context.Context, id string, st *TVState, remote *Re
 		st.mu.Unlock()
 		return
 	}
+
 	retries := 0
 	for {
+		st.mu.Lock()
+		inactive := st.activeClients == 0 && !st.lastClientActivity.IsZero() && time.Since(st.lastClientActivity) >= timeout
+		st.mu.Unlock()
+		if inactive {
+			log.Printf("stopping auto-reconnect %s due to inactivity", id)
+			st.mu.Lock()
+			st.running = false
+			st.mu.Unlock()
+			return
+		}
+
 		s.mu.RLock()
 		exists := s.tvs[id] != nil
 		s.mu.RUnlock()
@@ -1307,6 +1385,10 @@ func (s *Server) handleLaunchApp(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	id := s.resolveTV(r.URL.Query().Get("tv_id"))
+	if id != "" {
+		endSession := s.beginClientSession(id)
+		defer endSession()
+	}
 	jsonResponse(w, 200, s.nextEvent(r.Context(), id, s.eventTimeout))
 }
 

@@ -153,7 +153,12 @@ func connectRemote(ctx context.Context, host string, cert tls.Certificate, onEve
 func (r *Remote) Done() <-chan error { return r.done }
 
 func (r *Remote) Close() {
-	r.once.Do(func() { close(r.closed); _ = r.conn.Close() })
+	r.once.Do(func() {
+		close(r.closed)
+		if r.conn != nil {
+			_ = r.conn.Close()
+		}
+	})
 }
 
 func (r *Remote) send(payload []byte) error {

@@ -33,6 +33,18 @@ func testServer(t *testing.T) *Server {
 		t.Fatal(err)
 	}
 	s.eventTimeout = 20 * time.Millisecond
+	s.inactivityTimeout = 20 * time.Millisecond
+	t.Cleanup(func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for _, st := range s.states {
+			st.mu.Lock()
+			if st.cancel != nil {
+				st.cancel()
+			}
+			st.mu.Unlock()
+		}
+	})
 	return s
 }
 
@@ -369,5 +381,45 @@ func TestCertificatePersistenceAndProtocolEncoding(t *testing.T) {
 	}
 	if _, ok := keyCode("KEYCODE_PROG_BLUE"); !ok {
 		t.Fatal("frontend key missing")
+	}
+}
+
+func TestInactivityDisconnect(t *testing.T) {
+	s := testServer(t)
+	s.inactivityTimeout = 50 * time.Millisecond
+
+	w, out := requestJSON(t, s, http.MethodPost, "/api/tvs", map[string]any{"name": "Living Room", "host": "127.0.0.1"})
+	if w.Code != 201 {
+		t.Fatalf("add TV: %d %s", w.Code, w.Body.String())
+	}
+	tv := out["tv"].(map[string]any)
+	id := tv["id"].(string)
+
+	st := s.state(id)
+	st.mu.Lock()
+	st.lastClientActivity = time.Now()
+	st.mu.Unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	mockRemote := &Remote{done: make(chan error, 1), closed: make(chan struct{})}
+
+	st.mu.Lock()
+	st.remote = mockRemote
+	st.running = true
+	st.mu.Unlock()
+
+	go s.monitor(ctx, id, st, mockRemote)
+
+	time.Sleep(150 * time.Millisecond)
+
+	st.mu.Lock()
+	running := st.running
+	remote := st.remote
+	st.mu.Unlock()
+
+	if running || remote != nil {
+		t.Fatalf("expected TV connection to disconnect due to inactivity, running=%v remote=%v", running, remote)
 	}
 }

@@ -4,7 +4,7 @@ const ASSETS = [
     'index.html',
     'app.js?v=__VERSION__',
     'manifest.json?v=__VERSION__',
-    'icon.svg',
+    'icon.png',
     'https://cdn.tailwindcss.com/',
     'https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css',
     'https://unpkg.com/vue@3.4.15/dist/vue.global.prod.js'
