@@ -7,7 +7,7 @@ This tracker is the implementation-order gate for the ADB integration series. It
 | #1 | Managed ADB runtime foundation | Complete | CI run 11: `make test`, binary build/start, amd64 + arm64 container builds, packaged `adb version`; VERSION unchanged. |
 | #2 | Registry, authorization, pairing, connection APIs | Complete | CI run 33: gofmt, `make test`, binary build, disabled-ADB smoke; auth/persistence/multi-TV/REST-MCP tests; completion gate runs amd64 + arm64 containers. |
 | #3 | PWA ADB setup and connection status | Complete | CI run 42: full repo/browser tests, binary build, smoke; both ADB setup paths, token/session security, TV switching, auth failures, disconnect/forget covered. Visual/hardware screenshot validation deferred to #10. |
-| #4 | Device information and package/launcher inventory | Pending | |
+| #4 | Device information and package/launcher inventory | Complete | CI run 57: gofmt, full Go/browser tests, binary build, smoke; parser/API/MCP coverage includes allowlisted device info, current-user package and Leanback inventories, deterministic bounds, noisy/truncated/unsupported/offline behavior, auth and multi-TV serial isolation. |
 | #5 | PWA app discovery and launcher import | Pending | |
 | #6 | Secure single-APK install/update backend | Pending | |
 | #7 | PWA APK sideload/update workflow | Pending | |
