@@ -122,7 +122,7 @@ http://<server-ip>:7503/mcp
 
 It supports MCP initialization, ping, tool discovery, and tool calls. The core Remote v2/launcher tools remain available, and authenticated ADB administration adds read-only inventory tools in addition to connection controls:
 
-`status`, `list_tvs`, `add_tv`, `forget_tv`, `set_tv_apps`, `list_apps`, `add_app`, `update_app`, `reorder_apps`, `delete_app`, `connect_tv`, `submit_pairing_code`, `send_key`, `send_text`, `launch_app`, `next_event`, plus `adb_status`, `adb_pair`, `adb_connect`, `adb_disconnect`, `adb_forget`, `adb_device_info`, `adb_packages`, `adb_launchables`, and authenticated `install_apk`.
+`status`, `list_tvs`, `add_tv`, `forget_tv`, `set_tv_apps`, `list_apps`, `add_app`, `update_app`, `reorder_apps`, `delete_app`, `connect_tv`, `submit_pairing_code`, `send_key`, `send_text`, `launch_app`, `next_event`, plus `adb_status`, `adb_pair`, `adb_connect`, `adb_disconnect`, `adb_forget`, `adb_device_info`, `adb_packages`, `adb_launchables`, `adb_clear_package`, `adb_enable_package`, `adb_disable_package`, `adb_uninstall_package`, and authenticated `install_apk`.
 
 Uploaded MCP icons use base64 plus a MIME type. `next_event` preserves TV-scoped long-poll behavior. See [MCP.md](MCP.md) for client configuration and request examples.
 
