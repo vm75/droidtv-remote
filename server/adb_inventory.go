@@ -32,11 +32,11 @@ type ADBPackage struct {
 	Classification string `json:"classification"`
 	ThirdParty     bool   `json:"third_party"`
 	System         bool   `json:"system"`
-	Enabled      *bool  `json:"enabled,omitempty"`
-	VersionCode  string `json:"version_code,omitempty"`
-	VersionName  string `json:"version_name,omitempty"`
-	TVLaunchable bool   `json:"tv_launchable"`
-	Component    string `json:"component,omitempty"`
+	Enabled        *bool  `json:"enabled,omitempty"`
+	VersionCode    string `json:"version_code,omitempty"`
+	VersionName    string `json:"version_name,omitempty"`
+	TVLaunchable   bool   `json:"tv_launchable"`
+	Component      string `json:"component,omitempty"`
 }
 
 type ADBPackageInventory struct {
