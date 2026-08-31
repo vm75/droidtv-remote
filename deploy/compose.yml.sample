@@ -9,5 +9,6 @@ services:
       SERVER_PORT: 7503
       DROIDTV_ADB_ENABLED: "false"
       DROIDTV_ADB_PATH: /usr/bin/adb
+      DROIDTV_ADB_ADMIN_TOKEN: ${DROIDTV_ADB_ADMIN_TOKEN:-}
     volumes:
       - ./data:/app/data
