@@ -54,3 +54,5 @@ Use semantic versioning in `VERSION`. Use a patch for PWA-only changes, a minor 
 ADB is an optional administrator feature and must remain independent from Android TV Remote v2 state. Keep it disabled by default. The managed ADB identity belongs under `data/adb/.android/` with restrictive permissions and must not be written to an ephemeral container root home.
 
 Never expose a general shell or arbitrary ADB command surface. Construct commands with argument arrays, require an explicit serial for device commands, apply deadlines and output limits, and keep credentials, pairing codes, APK bytes, screenshots, and log contents out of normal logs. ADB REST/MCP surfaces must be authenticated and `Cache-Control: no-store`.
+
+Package administration is limited to freshly discovered third-party packages and fixed clear/enable/disable/current-user-uninstall operations. Revalidate inventory, install path, protected denylist, and exact confirmation state before mutation; never accept generic package or shell flags.
