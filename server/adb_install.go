@@ -16,10 +16,10 @@ import (
 )
 
 const (
-	maxAPKFilenameBytes   = 255
-	maxMCPAPKBytes        = 8 * 1024 * 1024
-	maxMCPRequestBytes    = 16 * 1024 * 1024
-	apkMultipartOverhead  = 1024 * 1024
+	maxAPKFilenameBytes  = 255
+	maxMCPAPKBytes       = 8 * 1024 * 1024
+	maxMCPRequestBytes   = 16 * 1024 * 1024
+	apkMultipartOverhead = 1024 * 1024
 )
 
 type adbAPKTemp struct {
