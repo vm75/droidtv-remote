@@ -100,6 +100,10 @@ Environment variables:
 
 When disabled, startup and all existing Remote v2 behavior remain independent of ADB. When enabled, ADB administration is per-TV and requires `Authorization: Bearer <secret>` for every ADB REST endpoint and ADB MCP tool. Secure pairing codes are request-only and are not persisted. Forgetting an ADB association does not revoke the shared host key on the TV; use the TV debugging settings for remote revocation.
 
+### Guarded package administration
+
+Authenticated ADB discovery can administer only freshly observed third-party packages. Clear data, enable, disable, and current-user uninstall are fixed operations with exact TV/package/user/state confirmation and server-side revalidation. Core Android/Google TV packages, system/privileged paths, stale or unknown packages, and ambiguous state are rejected before mutation. Disable/uninstall may remove matching launcher availability from the selected TV only; shared launchers and other TVs are preserved.
+
 ### ADB APK sideloading
 
 The authenticated PWA ADB administration view accepts exactly one `.apk` file for the selected connected TV. Before upload it shows the filename/size and requires confirmation naming that TV. Same-signature upgrades use normal Android `adb install -r` behavior and may preserve app data; downgrade, signature-bypass, split-package, bundle, URL, and multi-file installs are not supported. Successful installs refresh package inventory without silently changing the shared launcher library.
