@@ -242,7 +242,7 @@ func (m *ADBManager) env() []string {
 	return out
 }
 
-func (m *ADBManager) runWithTimeout(ctx context.Context, timeout time.Duration, args ...string) (ADBResult, error) {
+func (m *ADBManager) runWithBounds(ctx context.Context, timeout time.Duration, maxOutput int64, args ...string) (ADBResult, error) {
 	if m == nil || !m.cfg.Enabled {
 		return ADBResult{}, &ADBError{Code: "disabled", Message: "ADB integration is disabled"}
 	}
@@ -256,9 +256,16 @@ func (m *ADBManager) runWithTimeout(ctx context.Context, timeout time.Duration, 
 	if timeout <= 0 {
 		timeout = m.cfg.Timeout
 	}
+	if maxOutput <= 0 {
+		maxOutput = m.cfg.MaxOutput
+	}
 	deadline, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	return m.runner.Run(deadline, m.cfg.Path, append([]string(nil), args...), m.env(), m.cfg.MaxOutput)
+	return m.runner.Run(deadline, m.cfg.Path, append([]string(nil), args...), m.env(), maxOutput)
+}
+
+func (m *ADBManager) runWithTimeout(ctx context.Context, timeout time.Duration, args ...string) (ADBResult, error) {
+	return m.runWithBounds(ctx, timeout, m.cfg.MaxOutput, args...)
 }
 
 func (m *ADBManager) run(ctx context.Context, args ...string) (ADBResult, error) {
@@ -269,7 +276,7 @@ func (m *ADBManager) runHost(ctx context.Context, args ...string) (ADBResult, er
 	return m.run(ctx, args...)
 }
 
-func (m *ADBManager) runDevice(ctx context.Context, serial string, args ...string) (ADBResult, error) {
+func (m *ADBManager) runDeviceWithBounds(ctx context.Context, serial string, timeout time.Duration, maxOutput int64, args ...string) (ADBResult, error) {
 	serial = strings.TrimSpace(serial)
 	if serial == "" || strings.HasPrefix(serial, "-") || strings.ContainsAny(serial, "\r\n\t ") {
 		return ADBResult{}, &ADBError{Code: "invalid_target", Message: "An explicit ADB device serial is required"}
@@ -277,7 +284,11 @@ func (m *ADBManager) runDevice(ctx context.Context, serial string, args ...strin
 	full := make([]string, 0, len(args)+2)
 	full = append(full, "-s", serial)
 	full = append(full, args...)
-	return m.run(ctx, full...)
+	return m.runWithBounds(ctx, timeout, maxOutput, full...)
+}
+
+func (m *ADBManager) runDevice(ctx context.Context, serial string, args ...string) (ADBResult, error) {
+	return m.runDeviceWithBounds(ctx, serial, m.cfg.Timeout, m.cfg.MaxOutput, args...)
 }
 
 func (m *ADBManager) Version(ctx context.Context) (string, error) {
