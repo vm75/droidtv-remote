@@ -40,6 +40,7 @@ The endpoint is stateless. It accepts JSON-RPC requests over HTTP `POST`, MCP no
 | `adb_device_info` | Read allowlisted device properties and current user |
 | `adb_packages` | Read bounded installed-package inventory for the current user |
 | `adb_launchables` | Read Leanback launcher components for the current user |
+| `install_apk` | Authenticated single-APK install/update using the same bounded backend as REST; MCP base64 is limited to 8 MiB decoded |
 
 ## Example initialization
 
@@ -75,7 +76,13 @@ The endpoint is stateless. It accepts JSON-RPC requests over HTTP `POST`, MCP no
 
 Tool results include both JSON text content and `structuredContent`. Operational errors are returned as MCP tool errors rather than HTTP errors.
 
-All `adb_*` tools require the same administrator bearer token as the ADB REST API. Set `DROIDTV_ADB_ADMIN_TOKEN` only in the server environment, then send `Authorization: Bearer <token>` on the MCP HTTP request. Missing or wrong credentials return an MCP tool error with structured `error.code = "unauthorized"`. ADB status/results never include the token or secure pairing code.
+All `adb_*` tools and `install_apk` require the same administrator bearer token as the ADB REST API. Set `DROIDTV_ADB_ADMIN_TOKEN` only in the server environment, then send `Authorization: Bearer <token>` on the MCP HTTP request. Missing or wrong credentials return an MCP tool error with structured `error.code = "unauthorized"`. ADB status/results never include the token or secure pairing code.
+
+## APK installation
+
+`install_apk` accepts `tv_id`, a simple `.apk` `filename`, and `apk_base64`. The decoded APK must be 8 MiB or smaller, while the complete MCP HTTP request is capped at 16 MiB. The decoded bytes are streamed through the same generated mode-`0600` temporary-file path used by REST and are deleted after the call; they are not stored in shared state or retained as an APK repository.
+
+The tool targets only the selected TV's stored ADB serial and uses update semantics equivalent to `adb install -r`. It does not accept arbitrary paths, URLs, ADB flags, package names, or shell fragments, and does not enable downgrade, permission-grant, low-target-SDK, or signing-bypass options. Successful structured results contain SHA-256 and refreshed package/version information when Android's inventory makes the affected package uniquely identifiable. For APKs larger than 8 MiB, use the authenticated REST multipart endpoint, whose default limit is 128 MiB.
 
 ## Uploaded icons
 
