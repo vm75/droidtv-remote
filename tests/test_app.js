@@ -571,6 +571,63 @@ mountedCallbacks[0]();
     exposed.toggleADBDiscoverySelection(netflix);
     assert.equal(netflix.selected, false);
     assert.equal(systemPkg.tv_launchable, false);
+    assert.equal(systemPkg.protected, true);
+    assert.equal(exposed.adbDiscoveryCurrentUser.value, 0);
+
+    // Package administration is available only from discovered third-party rows.
+    // Protected rows are blocked locally, destructive actions can be canceled,
+    // and the confirmation payload is tied to the fresh TV/package/user/enabled state.
+    const packageWritesBefore = packageAdminRequests.length;
+    await exposed.mutateADBPackage(systemPkg, 'clear');
+    assert.match(exposed.adbPackageError.value, /protected|third-party/i);
+    assert.equal(packageAdminRequests.length, packageWritesBefore);
+
+    confirmResult = false;
+    await exposed.mutateADBPackage(alpha, 'uninstall');
+    assert.match(confirmations.at(-1), /current Android user/i);
+    assert.match(confirmations.at(-1), /shared launcher record/i);
+    assert.equal(packageAdminRequests.length, packageWritesBefore);
+    confirmResult = true;
+
+    holdPackageMutation = true;
+    const pendingPackageMutation = exposed.mutateADBPackage(alpha, 'clear');
+    await flushPromises();
+    assert.match(exposed.adbPackageMutating.value, /tv\.stream\.alpha:clear/);
+    assert.match(confirmations.at(-1), /Living Room/);
+    assert.match(confirmations.at(-1), /local data and settings/i);
+    await exposed.selectTv('bedroom');
+    assert.equal(exposed.selectedTvId.value, 'living');
+    assert.match(exposed.adbPackageError.value, /finish before switching/i);
+    resolvePackageMutation();
+    await pendingPackageMutation;
+    holdPackageMutation = false;
+    resolvePackageMutation = null;
+    assert.equal(exposed.adbPackageMutating.value, '');
+    assert.equal(packageAdminRequests.at(-1).action, 'clear');
+    assert.deepEqual(packageAdminRequests.at(-1).body.confirmation, {
+        tv_id: 'living',
+        package_id: 'tv.stream.alpha',
+        action: 'clear',
+        current_user: 0,
+        enabled: true
+    });
+
+    const betaAfterClear = exposed.adbDiscoveryPackages.value.find(item => item.package_id === 'tv.stream.beta');
+    assert.equal(betaAfterClear.enabled, false);
+    await exposed.mutateADBPackage(betaAfterClear, 'enable');
+    assert.equal(packageAdminRequests.at(-1).action, 'enable');
+    assert.deepEqual(packageAdminRequests.at(-1).body.confirmation, {
+        tv_id: 'living',
+        package_id: 'tv.stream.beta',
+        action: 'enable',
+        current_user: 0,
+        enabled: false
+    });
+    const betaAfterEnable = exposed.adbDiscoveryPackages.value.find(item => item.package_id === 'tv.stream.beta');
+    assert.equal(betaAfterEnable.enabled, true);
+    assert.match(exposed.adbPackageMessage.value, /Enable completed/i);
+    assert.equal(appSaveRequests.length, savesBeforeDiscovery);
+    assert.equal(tvAppRequests.length, tvWritesBeforeDiscovery);
 
     exposed.setADBDiscoveryMode('all');
     assert.equal(exposed.adbDiscoveryVisiblePackages.value.length, 4);
