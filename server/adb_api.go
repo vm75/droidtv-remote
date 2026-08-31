@@ -210,14 +210,24 @@ func writeADBError(w http.ResponseWriter, err error) {
 		switch adbErr.Code {
 		case "unauthorized":
 			status = http.StatusUnauthorized
-		case "invalid_endpoint", "invalid_pairing_code", "invalid_target":
+		case "invalid_endpoint", "invalid_pairing_code", "invalid_target", "invalid_upload", "invalid_apk":
 			status = http.StatusBadRequest
+		case "upload_too_large":
+			status = http.StatusRequestEntityTooLarge
 		case "disabled", "unavailable", "missing_admin_token":
 			status = http.StatusServiceUnavailable
 		case "unsupported_command":
 			status = http.StatusNotImplemented
 		case "malformed_output":
 			status = http.StatusBadGateway
+		case "malformed_apk", "incompatible_abi", "incompatible_sdk":
+			status = http.StatusUnprocessableEntity
+		case "insufficient_storage":
+			status = http.StatusInsufficientStorage
+		case "signature_mismatch", "version_downgrade", "package_manager_failure":
+			status = http.StatusConflict
+		case "canceled":
+			status = http.StatusRequestTimeout
 		case "timeout":
 			status = http.StatusGatewayTimeout
 		case "unauthorized_device", "offline", "pair_failed", "connect_failed":
