@@ -79,10 +79,14 @@ createApp({
         const adbAPKProgress = ref(null);
         const adbAPKError = ref('');
         const adbAPKResult = ref(null);
+        const adbDiagnosticBusy = ref('');
+        const adbDiagnosticError = ref('');
+        const adbDiagnosticMessage = ref('');
         let adbStatusInterval = null;
         let adbRequestGeneration = 0;
         let adbDiscoveryGeneration = 0;
         let adbAPKGeneration = 0;
+        let adbDiagnosticGeneration = 0;
         let adbAPKRequest = null;
 
         // Cookie helpers to avoid collisions on subpaths
@@ -309,6 +313,10 @@ createApp({
                 adbPackageError.value = 'Wait for the package administration action to finish before switching TVs.';
                 return;
             }
+            if (changed && adbDiagnosticBusy.value) {
+                adbDiagnosticError.value = 'Wait for the diagnostic or reboot action to finish before switching TVs.';
+                return;
+            }
             if (changed) {
                 adbRequestGeneration++;
                 adbDiscoveryGeneration++;
@@ -322,6 +330,8 @@ createApp({
                 adbDiscoveryCurrentUser.value = null;
                 adbPackageError.value = '';
                 adbPackageMessage.value = '';
+                adbDiagnosticError.value = '';
+                adbDiagnosticMessage.value = '';
                 adbDiscoveryPreview.value = false;
             }
             selectedTvId.value = tvId;
@@ -479,7 +489,11 @@ createApp({
             if (code === 'package_state_unavailable') return 'Package state could not be verified safely. Refresh and try again.';
             if (code === 'package_mutation_failed') return 'Android did not confirm the requested package state change.';
             if (code === 'partial_failure') return data && data.error ? data.error : 'The package action may have completed, but the resulting state could not be fully reconciled.';
-            if (code === 'canceled') return 'APK installation was canceled.';
+            if (code === 'capture_too_large') return 'The TV diagnostic capture exceeded its configured safety limit.';
+            if (code === 'malformed_capture') return 'The TV did not return a valid complete PNG screenshot.';
+            if (code === 'stale_reboot_confirmation') return 'The selected TV or ADB connection state changed. Refresh status before rebooting.';
+            if (code === 'invalid_reboot_confirmation') return 'Reboot confirmation is incomplete.';
+            if (code === 'canceled') return 'ADB operation was canceled.';
             return data && data.error ? data.error : 'ADB request failed';
         };
 
@@ -590,6 +604,10 @@ createApp({
             adbAPKUploading.value = false;
             adbAPKProgress.value = null;
             adbAPKFile.value = null;
+            adbDiagnosticGeneration++;
+            adbDiagnosticBusy.value = '';
+            adbDiagnosticError.value = '';
+            adbDiagnosticMessage.value = '';
             clearADBDiscovery();
             adbTokenInput.value = '';
             adbPairCode.value = '';
@@ -1034,6 +1052,108 @@ createApp({
                 if (generation === adbDiscoveryGeneration && tvId === selectedTvId.value) {
                     adbImporting.value = false;
                 }
+            }
+        };
+
+        const diagnosticFilename = (response, fallback) => {
+            const disposition = response && response.headers && response.headers.get
+                ? response.headers.get('Content-Disposition') || ''
+                : '';
+            const match = disposition.match(/filename="([^"]+)"/i);
+            return match && match[1] ? match[1] : fallback;
+        };
+
+        const downloadADBDiagnostic = async (kind) => {
+            if (adbDiagnosticBusy.value || (kind !== 'screenshot' && kind !== 'logs')) return;
+            const tv = selectedTv.value;
+            const tvId = selectedTvId.value;
+            const token = readADBToken();
+            adbDiagnosticError.value = '';
+            adbDiagnosticMessage.value = '';
+            if (!tv || !tvId || !token) {
+                adbDiagnosticError.value = 'Select a TV and enter the ADB administrator token first.';
+                return;
+            }
+            const generation = ++adbDiagnosticGeneration;
+            adbDiagnosticBusy.value = kind;
+            try {
+                const response = await fetch('api/tvs/' + encodeURIComponent(tvId) + '/adb/' + kind, {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                if (!response.ok) {
+                    let data = {};
+                    try { data = await response.json(); } catch (error) {}
+                    throw new Error(adbErrorMessage(data, response.status));
+                }
+                const blob = await response.blob();
+                if (generation !== adbDiagnosticGeneration || tvId !== selectedTvId.value) return;
+                const factory = window.URL || window.webkitURL;
+                if (!factory || typeof factory.createObjectURL !== 'function') {
+                    throw new Error('This browser cannot create a diagnostic download.');
+                }
+                const fallback = 'droidtv-remote-' + tvId + '-' + (kind === 'screenshot' ? 'screenshot.png' : 'logs.txt');
+                const filename = diagnosticFilename(response, fallback);
+                const url = factory.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = filename;
+                link.style.display = 'none';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                factory.revokeObjectURL(url);
+                adbDiagnosticMessage.value = kind === 'screenshot'
+                    ? 'Screenshot downloaded from ' + tv.name + '.'
+                    : 'Finite device log snapshot downloaded. Treat it as sensitive.';
+            } catch (error) {
+                if (generation === adbDiagnosticGeneration && tvId === selectedTvId.value) {
+                    adbDiagnosticError.value = error.message || 'Diagnostic download failed';
+                }
+            } finally {
+                if (generation === adbDiagnosticGeneration) adbDiagnosticBusy.value = '';
+            }
+        };
+
+        const rebootADBTV = async () => {
+            if (adbDiagnosticBusy.value) return;
+            const tv = selectedTv.value;
+            const tvId = selectedTvId.value;
+            const state = adbStatus.value && adbStatus.value.adb ? adbStatus.value.adb.state : '';
+            adbDiagnosticError.value = '';
+            adbDiagnosticMessage.value = '';
+            if (!tv || !tvId || state !== 'connected') {
+                adbDiagnosticError.value = 'Refresh ADB status and connect the selected TV before rebooting.';
+                return;
+            }
+            if (!window.confirm(
+                'Reboot ' + tv.name + '?\n\nThe command only requests a normal reboot. The TV will disconnect while restarting, and this screen cannot confirm when boot has completed.'
+            )) return;
+
+            const generation = ++adbDiagnosticGeneration;
+            adbDiagnosticBusy.value = 'reboot';
+            try {
+                const result = await adbFetch(tvId, 'reboot', {
+                    method: 'POST',
+                    body: {
+                        confirmation: {
+                            tv_id: tvId,
+                            tv_name: tv.name,
+                            state: 'connected'
+                        }
+                    }
+                });
+                if (generation !== adbDiagnosticGeneration || tvId !== selectedTvId.value) return;
+                if (!result || result.tv_id !== tvId || result.command_sent !== true || result.status !== 'accepted') {
+                    throw new Error('Reboot result did not match the selected TV.');
+                }
+                if (adbStatus.value && adbStatus.value.adb) adbStatus.value.adb.state = 'offline';
+                adbDiagnosticMessage.value = result.message || 'Reboot command sent. The TV is expected to disconnect while restarting.';
+            } catch (error) {
+                if (generation === adbDiagnosticGeneration && tvId === selectedTvId.value) {
+                    adbDiagnosticError.value = error.message || 'Failed to send reboot command';
+                }
+            } finally {
+                if (generation === adbDiagnosticGeneration) adbDiagnosticBusy.value = '';
             }
         };
 
@@ -2083,6 +2203,9 @@ createApp({
             adbAPKProgress,
             adbAPKError,
             adbAPKResult,
+            adbDiagnosticBusy,
+            adbDiagnosticError,
+            adbDiagnosticMessage,
             adbDiscoveryVisiblePackages,
             adbDiscoverySelected,
 
@@ -2122,6 +2245,8 @@ createApp({
             clearADBAPKSelection,
             installADBAPK,
             cancelADBAPKUpload,
+            downloadADBDiagnostic,
+            rebootADBTV,
             selectConfiguredTv,
             saveTvAppConfiguration,
             openAddApp,
