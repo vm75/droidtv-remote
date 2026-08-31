@@ -17,12 +17,17 @@ const appReorderRequests = [];
 const adbRequests = [];
 const adbUploadRequests = [];
 const packageAdminRequests = [];
+const diagnosticRequests = [];
+const diagnosticDownloads = [];
 const confirmations = [];
 const disabledAdminPackages = new Set(['tv.stream.beta']);
 const uninstalledAdminPackages = new Set();
 let confirmResult = true;
 let holdPackageMutation = false;
 let resolvePackageMutation = null;
+let holdDiagnostic = false;
+let resolveDiagnostic = null;
+let failNextDiagnostic = false;
 let nextADBUploadResponse = null;
 let holdADBUpload = false;
 let pendingADBUpload = null;
@@ -117,6 +122,10 @@ const adbStates = {
 
 global.window = {
     location: { pathname: '/remote/', hostname: 'localhost' },
+    URL: {
+        createObjectURL: () => 'blob:diagnostic',
+        revokeObjectURL() {}
+    },
     localStorage: storage,
     sessionStorage,
     matchMedia: () => ({ matches: false }),
@@ -129,7 +138,25 @@ global.window = {
         return confirmResult;
     }
 };
-global.document = { cookie: '', hidden: false };
+global.document = {
+    cookie: '',
+    hidden: false,
+    body: {
+        appendChild() {},
+        removeChild() {}
+    },
+    createElement(tag) {
+        if (tag !== 'a') return { style: {} };
+        return {
+            href: '',
+            download: '',
+            style: {},
+            click() {
+                diagnosticDownloads.push({ href: this.href, download: this.download });
+            }
+        };
+    }
+};
 global.navigator = {
     userAgent: 'node-test',
     standalone: false,
@@ -251,6 +278,44 @@ global.fetch = async (url, options = {}) => {
         });
         if (auth === 'Bearer bad-token' || !auth) {
             return response({ error: 'ADB administrator authorization required', code: 'unauthorized' }, 401);
+        }
+        if (action === 'screenshot' || action === 'logs') {
+            const run = () => {
+                diagnosticRequests.push({ tvId, action });
+                if (failNextDiagnostic) {
+                    failNextDiagnostic = false;
+                    return response({ error: 'Capture exceeded safety limit', code: 'capture_too_large' }, 413);
+                }
+                if (action === 'screenshot') {
+                    return response('png-bytes', 200, {
+                        'Content-Type': 'image/png',
+                        'Content-Disposition': 'attachment; filename="droidtv-remote-' + tvId + '-screenshot.png"'
+                    });
+                }
+                return response('redacted finite logs', 200, {
+                    'Content-Type': 'text/plain; charset=utf-8',
+                    'Content-Disposition': 'attachment; filename="droidtv-remote-' + tvId + '-logs.txt"'
+                });
+            };
+            if (holdDiagnostic) {
+                return new Promise(resolve => {
+                    resolveDiagnostic = () => resolve(run());
+                });
+            }
+            return run();
+        }
+        if (action === 'reboot' && options.method === 'POST') {
+            const body = JSON.parse(options.body);
+            diagnosticRequests.push({ tvId, action, body });
+            adbStates[tvId] = { ...adbStates[tvId], state: 'offline' };
+            return response({
+                tv_id: tvId,
+                tv_name: tvId === 'living' ? 'Living Room' : 'Bedroom',
+                status: 'accepted',
+                command_sent: true,
+                adb_state: 'offline',
+                message: 'Reboot command was sent. The TV will disconnect while restarting.'
+            }, 202);
         }
         if (action === 'status') {
             return response({
@@ -404,11 +469,17 @@ global.fetch = async (url, options = {}) => {
     throw new Error(`Unexpected fetch: ${url}`);
 };
 
-function response(body, status = 200) {
+function response(body, status = 200, headerValues = {}) {
+    const headers = {};
+    for (const [key, value] of Object.entries(headerValues)) headers[key.toLowerCase()] = value;
     return {
         ok: status >= 200 && status < 300,
         status,
-        async json() { return body; }
+        headers: {
+            get(name) { return headers[String(name).toLowerCase()] || null; }
+        },
+        async json() { return body; },
+        async blob() { return { body, size: typeof body === 'string' ? body.length : 0 }; }
     };
 }
 
