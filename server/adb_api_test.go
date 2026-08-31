@@ -15,7 +15,6 @@ import (
 
 type adbRecordedCall struct {
 	args []string
-	env  []string
 }
 
 type scriptedADBRunner struct {
@@ -30,7 +29,11 @@ type scriptedADBRunner struct {
 func (r *scriptedADBRunner) Run(ctx context.Context, path string, args []string, env []string, maxOutput int64) (ADBResult, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.calls = append(r.calls, adbRecordedCall{args: append([]string(nil), args...), env: append([]string(nil), env...)})
+	recorded := append([]string(nil), args...)
+	if len(recorded) >= 3 && recorded[0] == "pair" {
+		recorded[2] = "<redacted>"
+	}
+	r.calls = append(r.calls, adbRecordedCall{args: recorded})
 	if len(args) > 0 && args[0] == r.failCommand {
 		if r.failErr != nil {
 			return ADBResult{}, r.failErr
