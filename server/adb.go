@@ -76,15 +76,16 @@ func newLimitedBuffer(limit int64) *limitedBuffer {
 
 func (b *limitedBuffer) Write(p []byte) (int, error) {
 	n := len(p)
-	if b.remaining > 0 {
+	available := b.remaining
+	if available > 0 {
 		take := int64(len(p))
-		if take > b.remaining {
-			take = b.remaining
+		if take > available {
+			take = available
 		}
 		_, _ = b.buf.Write(p[:take])
 		b.remaining -= take
 	}
-	if int64(len(p)) > b.remaining && b.remaining == 0 {
+	if int64(len(p)) > available {
 		b.truncated = true
 	}
 	return n, nil
