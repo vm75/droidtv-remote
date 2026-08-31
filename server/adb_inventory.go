@@ -28,9 +28,10 @@ type ADBDeviceInfo struct {
 }
 
 type ADBPackage struct {
-	PackageID    string `json:"package_id"`
-	ThirdParty   bool   `json:"third_party"`
-	System       bool   `json:"system"`
+	PackageID      string `json:"package_id"`
+	Classification string `json:"classification"`
+	ThirdParty     bool   `json:"third_party"`
+	System         bool   `json:"system"`
 	Enabled      *bool  `json:"enabled,omitempty"`
 	VersionCode  string `json:"version_code,omitempty"`
 	VersionName  string `json:"version_name,omitempty"`
@@ -81,6 +82,10 @@ func appendWarning(warnings []string, warning string) []string {
 
 func (m *ADBManager) deviceCommand(ctx context.Context, serial string, args ...string) (ADBResult, error) {
 	result, err := m.runDevice(ctx, serial, args...)
+	text := strings.ToLower(strings.TrimSpace(result.Stdout + "\n" + result.Stderr))
+	if err != nil && (strings.Contains(text, "unknown command") || strings.Contains(text, "not found") || strings.Contains(text, "unsupported")) {
+		return result, &ADBError{Code: "unsupported_command", Message: "This Android build does not support the requested ADB inventory command"}
+	}
 	if mapped := mapADBOperationError(result, err); mapped != nil {
 		return result, mapped
 	}
@@ -326,14 +331,20 @@ func (m *ADBManager) PackageInventory(ctx context.Context, serial string) (ADBPa
 	}
 	for _, pkg := range ids {
 		record := ADBPackage{
-			PackageID:    pkg,
-			VersionCode:  packages[pkg],
-			TVLaunchable: launchableByPackage[pkg] != "",
-			Component:    launchableByPackage[pkg],
+			PackageID:      pkg,
+			Classification: "unknown",
+			VersionCode:    packages[pkg],
+			TVLaunchable:   launchableByPackage[pkg] != "",
+			Component:      launchableByPackage[pkg],
 		}
 		if thirdKnown {
 			record.ThirdParty = thirdParty[pkg]
 			record.System = !record.ThirdParty
+			if record.ThirdParty {
+				record.Classification = "third_party"
+			} else {
+				record.Classification = "system"
+			}
 		}
 		if enabledKnown {
 			value := !disabled[pkg]
