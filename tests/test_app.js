@@ -16,6 +16,9 @@ const appSaveRequests = [];
 const appReorderRequests = [];
 const adbRequests = [];
 let failNextStatus = false;
+let failNextDiscovery = false;
+let deferredDiscoveryTv = '';
+let resolveDeferredDiscovery = null;
 let exposed;
 
 const localValues = new Map();
@@ -84,15 +87,19 @@ global.fetch = async (url, options = {}) => {
         });
     }
     if (url === 'api/apps' && options.method === 'POST') {
+        const packageId = options.body.get('package_id');
+        const id = packageId === 'com.plexapp.android' ? 'plex' :
+            (packageId === 'tv.stream.alpha' ? 'alpha' :
+            (packageId === 'tv.stream.beta' ? 'beta' : 'imported'));
         appSaveRequests.push({
             name: options.body.get('name'),
-            packageId: options.body.get('package_id')
+            packageId
         });
         return response({
             app: {
-                id: 'plex',
+                id,
                 name: options.body.get('name'),
-                package_id: options.body.get('package_id'),
+                package_id: packageId,
                 icon: ''
             }
         }, 201);
@@ -173,6 +180,64 @@ global.fetch = async (url, options = {}) => {
                 remote: { connected: false, connecting: false, pairing_in_progress: false },
                 adb: { ...adbStates[tvId] }
             });
+        }
+        if (action === 'packages') {
+            if (failNextDiscovery) {
+                failNextDiscovery = false;
+                return response({ error: 'The TV is offline', code: 'offline' }, 409);
+            }
+            const payload = tvId === 'bedroom'
+                ? {
+                    tv_id: tvId,
+                    inventory: { current_user: 0, packages: [], warnings: [] }
+                }
+                : {
+                    tv_id: tvId,
+                    inventory: {
+                        current_user: 0,
+                        packages: [
+                            {
+                                package_id: 'com.netflix.ninja',
+                                classification: 'third_party',
+                                enabled: true,
+                                version_code: '100',
+                                tv_launchable: true,
+                                component: 'com.netflix.ninja/.MainActivity'
+                            },
+                            {
+                                package_id: 'tv.stream.alpha',
+                                classification: 'third_party',
+                                enabled: true,
+                                version_code: '12',
+                                tv_launchable: true,
+                                component: 'tv.stream.alpha/.TvActivity'
+                            },
+                            {
+                                package_id: 'tv.stream.beta',
+                                classification: 'third_party',
+                                enabled: false,
+                                version_code: '7',
+                                tv_launchable: true,
+                                component: 'tv.stream.beta/.TvActivity'
+                            },
+                            {
+                                package_id: 'com.vendor.system',
+                                classification: 'system',
+                                enabled: true,
+                                version_code: '55',
+                                tv_launchable: false,
+                                component: ''
+                            }
+                        ],
+                        warnings: ['Ignored 1 malformed package-list lines.']
+                    }
+                };
+            if (deferredDiscoveryTv === tvId) {
+                return new Promise(resolve => {
+                    resolveDeferredDiscovery = () => resolve(response(payload));
+                });
+            }
+            return response(payload);
         }
         if (action === 'pair') {
             adbStates[tvId] = {
@@ -332,8 +397,84 @@ mountedCallbacks[0]();
     assert.deepEqual(secureConnect.body, { endpoint: '192.168.1.10:42123' });
     assert.equal(exposed.adbStatus.value.adb.state, 'connected');
 
-    // Switching TVs resets prior ADB state and queries the newly selected TV.
+    // Discovery is launchable-first, exact-package aware, and read-only until confirmed.
+    const savesBeforeDiscovery = appSaveRequests.length;
+    const tvWritesBeforeDiscovery = tvAppRequests.length;
+    await exposed.discoverADBApps();
+    assert.equal(exposed.adbDiscoveryPackages.value.length, 4);
+    assert.equal(exposed.adbDiscoveryVisiblePackages.value.length, 3);
+    assert.equal(exposed.adbDiscoveryWarnings.value.length, 1);
+    const netflix = exposed.adbDiscoveryPackages.value.find(item => item.package_id === 'com.netflix.ninja');
+    const alpha = exposed.adbDiscoveryPackages.value.find(item => item.package_id === 'tv.stream.alpha');
+    const beta = exposed.adbDiscoveryPackages.value.find(item => item.package_id === 'tv.stream.beta');
+    const systemPkg = exposed.adbDiscoveryPackages.value.find(item => item.package_id === 'com.vendor.system');
+    assert.equal(netflix.existing_launcher_id, 'netflix');
+    exposed.toggleADBDiscoverySelection(netflix);
+    assert.equal(netflix.selected, false);
+    assert.equal(systemPkg.tv_launchable, false);
+
+    exposed.setADBDiscoveryMode('all');
+    assert.equal(exposed.adbDiscoveryVisiblePackages.value.length, 4);
+    exposed.setADBDiscoveryMode('launchable');
+
+    exposed.toggleADBDiscoverySelection(alpha);
+    alpha.import_name = '   ';
+    exposed.reviewADBImport();
+    assert.match(exposed.adbDiscoveryError.value, /display name/i);
+    assert.equal(exposed.adbDiscoveryPreview.value, false);
+    alpha.import_name = 'Alpha TV';
+    exposed.reviewADBImport();
+    assert.equal(exposed.adbDiscoveryPreview.value, true);
+    exposed.cancelADBImportReview();
+    assert.equal(exposed.adbDiscoveryPreview.value, false);
+    assert.equal(appSaveRequests.length, savesBeforeDiscovery);
+    assert.equal(tvAppRequests.length, tvWritesBeforeDiscovery);
+
+    // Refreshing/canceling discovery never writes persistent data.
+    exposed.clearADBDiscovery();
+    assert.equal(exposed.adbDiscoveryPackages.value.length, 0);
+    await exposed.discoverADBApps();
+    assert.equal(appSaveRequests.length, savesBeforeDiscovery);
+    assert.equal(tvAppRequests.length, tvWritesBeforeDiscovery);
+
+    // Selective import appends only the chosen launcher and preserves existing TV order.
+    const alpha2 = exposed.adbDiscoveryPackages.value.find(item => item.package_id === 'tv.stream.alpha');
+    const beta2 = exposed.adbDiscoveryPackages.value.find(item => item.package_id === 'tv.stream.beta');
+    exposed.toggleADBDiscoverySelection(alpha2);
+    alpha2.import_name = 'Alpha TV';
+    assert.equal(beta2.selected, false);
+    exposed.reviewADBImport();
+    await exposed.importDiscoveredADBApps();
+    assert.deepEqual(appSaveRequests.at(-1), { name: 'Alpha TV', packageId: 'tv.stream.alpha' });
+    assert.deepEqual(tvAppRequests.at(-1), { tvId: 'living', app_ids: ['netflix', 'alpha'] });
+    assert.equal(appSaveRequests.filter(item => item.packageId === 'tv.stream.beta').length, 0);
+
+    // Discovery errors are visible and do not mutate launchers.
+    failNextDiscovery = true;
+    const savesBeforeError = appSaveRequests.length;
+    await exposed.discoverADBApps();
+    assert.match(exposed.adbDiscoveryError.value, /offline/i);
+    assert.equal(appSaveRequests.length, savesBeforeError);
+
+    // Stale discovery results cannot overwrite state after switching TVs.
+    deferredDiscoveryTv = 'living';
+    const staleDiscovery = exposed.discoverADBApps();
+    await Promise.resolve();
     await exposed.selectTv('bedroom');
+    assert.equal(exposed.adbDiscoveryPackages.value.length, 0);
+    resolveDeferredDiscovery();
+    await staleDiscovery;
+    assert.equal(exposed.selectedTvId.value, 'bedroom');
+    assert.equal(exposed.adbDiscoveryPackages.value.length, 0);
+    deferredDiscoveryTv = '';
+    resolveDeferredDiscovery = null;
+
+    // Empty discovery results are explicit and harmless.
+    await exposed.discoverADBApps();
+    assert.equal(exposed.adbDiscoveryPackages.value.length, 0);
+    assert.equal(appSaveRequests.length, savesBeforeError);
+
+    // Switching TVs resets prior ADB state and queries the newly selected TV.
     assert.equal(exposed.selectedTvId.value, 'bedroom');
     assert.equal(exposed.adbStatus.value.tv_id, 'bedroom');
     assert.equal(adbRequests.at(-1).tvId, 'bedroom');
