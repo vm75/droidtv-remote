@@ -40,9 +40,7 @@ type TVState struct {
 	lastClientActivity time.Time
 	activeClients      int
 	adbState           string
-	adbInstallMu       sync.Mutex
-	adbPackageMu       sync.Mutex
-	adbDiagnosticMu    sync.Mutex
+	adbAdminMu         sync.Mutex
 	adbOfflineChecks   int
 }
 
