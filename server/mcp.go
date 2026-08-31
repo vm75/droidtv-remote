@@ -71,6 +71,7 @@ func mcpTools() []mcpTool {
 		{"adb_device_info", "Read allowlisted device information for the selected ADB-connected TV.", obj(map[string]any{"tv_id": str("TV ID")}, "tv_id")},
 		{"adb_packages", "List the selected TV's bounded installed-package inventory for the current Android user.", obj(map[string]any{"tv_id": str("TV ID")}, "tv_id")},
 		{"adb_launchables", "List Leanback-launchable components for the selected TV and current Android user.", obj(map[string]any{"tv_id": str("TV ID")}, "tv_id")},
+		{"install_apk", "Install or update one APK on the selected ADB-connected TV. MCP uses base64 and an 8 MiB decoded limit.", obj(map[string]any{"tv_id": str("TV ID"), "filename": str("APK filename ending in .apk"), "apk_base64": str("Base64-encoded APK; decoded payload must be 8 MiB or smaller")}, "tv_id", "filename", "apk_base64")},
 		{"send_key", "Send an Android KEYCODE_* command.", obj(map[string]any{"tv_id": str("TV ID"), "key": str("Android key code name")}, "tv_id", "key")},
 		{"send_text", "Send text through the TV IME, optionally followed by Enter.", obj(map[string]any{"tv_id": str("TV ID"), "text": str("Text to enter"), "enter": boolean("Send KEYCODE_ENTER after the text")}, "tv_id", "text")},
 		{"launch_app", "Launch an enabled shared launcher on a TV.", obj(map[string]any{"tv_id": str("TV ID"), "launcher_id": str("Launcher ID or configured package/app link")}, "tv_id", "launcher_id")},
@@ -96,8 +97,14 @@ func (s *Server) mcpHandler() http.Handler {
 			apiError(w, 405, "MCP uses POST requests")
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxMCPRequestBytes)
 		var req rpcRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			var maxErr *http.MaxBytesError
+			if errors.As(err, &maxErr) {
+				s.writeRPC(w, rpcResponse{JSONRPC: "2.0", Error: &rpcError{Code: -32600, Message: "MCP request exceeds the 16 MiB transport limit"}})
+				return
+			}
 			s.writeRPC(w, rpcResponse{JSONRPC: "2.0", Error: &rpcError{Code: -32700, Message: "Parse error"}})
 			return
 		}
@@ -167,7 +174,7 @@ func argStrings(a map[string]any, k string) []string {
 func argBool(a map[string]any, k string) bool { v, _ := a[k].(bool); return v }
 
 func (s *Server) callTool(r *http.Request, name string, a map[string]any) (any, error) {
-	if strings.HasPrefix(name, "adb_") {
+	if strings.HasPrefix(name, "adb_") || name == "install_apk" {
 		if err := s.requireADBAuthorization(r); err != nil {
 			return nil, err
 		}
@@ -316,6 +323,12 @@ func (s *Server) callTool(r *http.Request, name string, a map[string]any) (any, 
 			return nil, errors.New("Unknown TV")
 		}
 		return s.adbLaunchables(r.Context(), id)
+	case "install_apk":
+		id := s.resolveTV(argString(a, "tv_id"))
+		if id == "" {
+			return nil, errors.New("Unknown TV")
+		}
+		return s.installAPKBase64(r.Context(), id, argString(a, "filename"), argString(a, "apk_base64"))
 	case "send_key":
 		if err := s.sendKey(argString(a, "tv_id"), argString(a, "key")); err != nil {
 			return nil, err
