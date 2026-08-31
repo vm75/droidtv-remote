@@ -68,8 +68,12 @@ createApp({
         const adbDiscoveryPackages = ref([]);
         const adbDiscoveryWarnings = ref([]);
         const adbDiscoveryError = ref('');
+        const adbDiscoveryCurrentUser = ref(null);
         const adbDiscoveryPreview = ref(false);
         const adbImporting = ref(false);
+        const adbPackageMutating = ref('');
+        const adbPackageError = ref('');
+        const adbPackageMessage = ref('');
         const adbAPKFile = ref(null);
         const adbAPKUploading = ref(false);
         const adbAPKProgress = ref(null);
@@ -301,6 +305,10 @@ createApp({
                 adbAPKError.value = 'Cancel the APK installation before switching TVs.';
                 return;
             }
+            if (changed && adbPackageMutating.value) {
+                adbPackageError.value = 'Wait for the package administration action to finish before switching TVs.';
+                return;
+            }
             if (changed) {
                 adbRequestGeneration++;
                 adbDiscoveryGeneration++;
@@ -311,6 +319,9 @@ createApp({
                 adbDiscoveryPackages.value = [];
                 adbDiscoveryWarnings.value = [];
                 adbDiscoveryError.value = '';
+                adbDiscoveryCurrentUser.value = null;
+                adbPackageError.value = '';
+                adbPackageMessage.value = '';
                 adbDiscoveryPreview.value = false;
             }
             selectedTvId.value = tvId;
@@ -745,6 +756,9 @@ createApp({
             adbDiscoveryPackages.value = [];
             adbDiscoveryWarnings.value = [];
             adbDiscoveryError.value = '';
+            adbDiscoveryCurrentUser.value = null;
+            adbPackageError.value = '';
+            adbPackageMessage.value = '';
             adbDiscoveryPreview.value = false;
             adbDiscoveryLoading.value = false;
             adbImporting.value = false;
@@ -777,6 +791,7 @@ createApp({
                 const discovered = Array.isArray(inventory.packages) ? inventory.packages : [];
                 const shared = Array.isArray(appResult.apps) ? appResult.apps : [];
                 allApps.value = shared;
+                adbDiscoveryCurrentUser.value = typeof inventory.current_user === 'number' ? inventory.current_user : null;
 
                 adbDiscoveryPackages.value = discovered.map(pkg => {
                     const existing = shared.find(app => app.package_id === pkg.package_id);
@@ -786,6 +801,7 @@ createApp({
                         version_code: pkg.version_code || '',
                         classification: pkg.classification || 'unknown',
                         enabled: typeof pkg.enabled === 'boolean' ? pkg.enabled : null,
+                        protected: Boolean(pkg.protected),
                         tv_launchable: Boolean(pkg.tv_launchable),
                         existing_launcher_id: existing ? existing.id : '',
                         existing_launcher_name: existing ? existing.name : '',
@@ -798,11 +814,83 @@ createApp({
                 if (generation !== adbDiscoveryGeneration || tvId !== selectedTvId.value) return;
                 adbDiscoveryPackages.value = [];
                 adbDiscoveryWarnings.value = [];
+                adbDiscoveryCurrentUser.value = null;
                 adbDiscoveryError.value = error.message || 'Failed to discover apps';
             } finally {
                 if (generation === adbDiscoveryGeneration && tvId === selectedTvId.value) {
                     adbDiscoveryLoading.value = false;
                 }
+            }
+        };
+
+        const mutateADBPackage = async (pkg, action) => {
+            if (adbPackageMutating.value) return;
+            const allowed = { clear: true, enable: true, disable: true, uninstall: true };
+            if (!allowed[action]) return;
+            const tv = selectedTv.value;
+            const tvId = selectedTvId.value;
+            const current = adbDiscoveryPackages.value.find(item => item.package_id === (pkg && pkg.package_id));
+            adbPackageError.value = '';
+            adbPackageMessage.value = '';
+            if (!tv || !tvId || !current || adbDiscoveryCurrentUser.value === null) {
+                adbPackageError.value = 'Refresh app discovery before administering a package.';
+                return;
+            }
+            if (current.protected || current.classification !== 'third_party') {
+                adbPackageError.value = 'This package is protected or is not classified as third-party.';
+                return;
+            }
+            if (typeof current.enabled !== 'boolean') {
+                adbPackageError.value = 'The current package enabled state is unavailable. Refresh discovery and try again.';
+                return;
+            }
+
+            let prompt = '';
+            if (action === 'clear') {
+                prompt = 'Clear all app data for ' + current.package_id + ' on ' + tv.name +
+                    '?\n\nThis deletes the app\'s local data and settings for the current Android user and may require signing in again.';
+            } else if (action === 'uninstall') {
+                prompt = 'Uninstall ' + current.package_id + ' from ' + tv.name +
+                    ' for the current Android user?\n\nThe shared launcher record will be kept, but its availability on this TV will be removed.';
+            } else if (action === 'disable') {
+                prompt = 'Disable ' + current.package_id + ' on ' + tv.name + ' for the current Android user?';
+            } else {
+                prompt = 'Enable ' + current.package_id + ' on ' + tv.name + ' for the current Android user?';
+            }
+            if (!window.confirm(prompt)) return;
+
+            const generation = adbDiscoveryGeneration;
+            adbPackageMutating.value = current.package_id + ':' + action;
+            try {
+                const result = await adbFetch(tvId, 'packages/' + action, {
+                    method: 'POST',
+                    body: {
+                        package_id: current.package_id,
+                        confirmation: {
+                            tv_id: tvId,
+                            package_id: current.package_id,
+                            action: action,
+                            current_user: adbDiscoveryCurrentUser.value,
+                            enabled: current.enabled
+                        }
+                    }
+                });
+                if (generation !== adbDiscoveryGeneration || tvId !== selectedTvId.value) return;
+                if (!result || result.tv_id !== tvId || result.package_id !== current.package_id || result.action !== action) {
+                    throw new Error('Package administration result did not match the selected TV and package.');
+                }
+                adbPackageMessage.value = action.charAt(0).toUpperCase() + action.slice(1) +
+                    ' completed for ' + current.package_id + '.';
+                await refreshTvs();
+                if (generation !== adbDiscoveryGeneration || tvId !== selectedTvId.value) return;
+                await discoverADBApps();
+                if (tvId === selectedTvId.value) await checkStatus();
+            } catch (error) {
+                if (generation === adbDiscoveryGeneration && tvId === selectedTvId.value) {
+                    adbPackageError.value = error.message || 'Package administration failed';
+                }
+            } finally {
+                if (tvId === selectedTvId.value) adbPackageMutating.value = '';
             }
         };
 
@@ -1977,8 +2065,12 @@ createApp({
             adbDiscoveryPackages,
             adbDiscoveryWarnings,
             adbDiscoveryError,
+            adbDiscoveryCurrentUser,
             adbDiscoveryPreview,
             adbImporting,
+            adbPackageMutating,
+            adbPackageError,
+            adbPackageMessage,
             adbAPKFile,
             adbAPKUploading,
             adbAPKProgress,
@@ -2014,6 +2106,7 @@ createApp({
             clearADBDiscovery,
             discoverADBApps,
             setADBDiscoveryMode,
+            mutateADBPackage,
             toggleADBDiscoverySelection,
             reviewADBImport,
             cancelADBImportReview,
