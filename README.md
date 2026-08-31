@@ -112,9 +112,9 @@ The same process exposes a stateless MCP Streamable HTTP endpoint at:
 http://<server-ip>:7503/mcp
 ```
 
-It supports MCP initialization, ping, tool discovery, and tool calls. The core Remote v2/launcher tools remain available, and authenticated ADB administration adds five separate tools:
+It supports MCP initialization, ping, tool discovery, and tool calls. The core Remote v2/launcher tools remain available, and authenticated ADB administration adds read-only inventory tools in addition to connection controls:
 
-`status`, `list_tvs`, `add_tv`, `forget_tv`, `set_tv_apps`, `list_apps`, `add_app`, `update_app`, `reorder_apps`, `delete_app`, `connect_tv`, `submit_pairing_code`, `send_key`, `send_text`, `launch_app`, `next_event`, plus `adb_status`, `adb_pair`, `adb_connect`, `adb_disconnect`, and `adb_forget`.
+`status`, `list_tvs`, `add_tv`, `forget_tv`, `set_tv_apps`, `list_apps`, `add_app`, `update_app`, `reorder_apps`, `delete_app`, `connect_tv`, `submit_pairing_code`, `send_key`, `send_text`, `launch_app`, `next_event`, plus `adb_status`, `adb_pair`, `adb_connect`, `adb_disconnect`, `adb_forget`, `adb_device_info`, `adb_packages`, and `adb_launchables`.
 
 Uploaded MCP icons use base64 plus a MIME type. `next_event` preserves TV-scoped long-poll behavior. See [MCP.md](MCP.md) for client configuration and request examples.
 
@@ -211,6 +211,11 @@ Per-TV ADB association is independent from Android TV Remote v2. The authenticat
 - `POST /api/tvs/<tv-id>/adb/connect` with `{"endpoint":"host:port"}`
 - `POST /api/tvs/<tv-id>/adb/disconnect`
 - `POST /api/tvs/<tv-id>/adb/forget`
+- `GET /api/tvs/<tv-id>/adb/device`
+- `GET /api/tvs/<tv-id>/adb/packages`
+- `GET /api/tvs/<tv-id>/adb/launchables`
+
+Inventory is on-demand and read-only. Device information exposes only manufacturer, model, product, Android release/API level, build identifier, supported ABIs, and current user. Package inventory reports deterministic bounded package IDs, system/third-party classification, enabled state when available, version code when available, and whether an exact package has a Leanback launcher component. The launcher inventory specifically queries `ACTION_MAIN` with `CATEGORY_LEANBACK_LAUNCHER`. Friendly localized labels, icons, banners, and APK resources are intentionally not discovered in this phase. Parser warnings make vendor-noisy, unsupported, or truncated results explicit.
 
 All ADB responses are `Cache-Control: no-store`. Status reports Remote v2 and ADB separately and uses ADB states `disabled`, `unavailable`, `unpaired`, `pairing`, `connecting`, `unauthorized`, `connected`, or `offline`. Secure Wi-Fi pairing persists only the returned ADB association/GUID; the six-digit code is never persisted.
 
