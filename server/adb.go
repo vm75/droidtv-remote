@@ -117,6 +117,9 @@ func (execADBRunner) Run(ctx context.Context, path string, args []string, env []
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return result, &ADBError{Code: "timeout", TimedOut: true, Truncated: result.Truncated, Message: "ADB command timed out"}
 	}
+	if errors.Is(ctx.Err(), context.Canceled) {
+		return result, &ADBError{Code: "canceled", Truncated: result.Truncated, Message: "ADB command was canceled"}
+	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
 		result.ExitCode = exitErr.ExitCode()
