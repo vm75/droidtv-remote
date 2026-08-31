@@ -41,6 +41,7 @@ type TVState struct {
 	activeClients      int
 	adbState           string
 	adbInstallMu       sync.Mutex
+	adbPackageMu       sync.Mutex
 }
 
 type Event struct {
@@ -677,6 +678,10 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/tvs/{tv_id}/adb/packages", s.handleADBPackages)
 	m.HandleFunc("GET /api/tvs/{tv_id}/adb/launchables", s.handleADBLaunchables)
 	m.HandleFunc("POST /api/tvs/{tv_id}/adb/install-apk", s.handleADBInstallAPK)
+	m.HandleFunc("POST /api/tvs/{tv_id}/adb/packages/clear", s.handleADBPackageAction("clear"))
+	m.HandleFunc("POST /api/tvs/{tv_id}/adb/packages/enable", s.handleADBPackageAction("enable"))
+	m.HandleFunc("POST /api/tvs/{tv_id}/adb/packages/disable", s.handleADBPackageAction("disable"))
+	m.HandleFunc("POST /api/tvs/{tv_id}/adb/packages/uninstall", s.handleADBPackageAction("uninstall"))
 	m.Handle("/mcp", s.mcpHandler())
 	m.Handle("/mcp/", s.mcpHandler())
 	m.HandleFunc("/", s.handleStatic)
