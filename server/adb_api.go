@@ -214,6 +214,10 @@ func writeADBError(w http.ResponseWriter, err error) {
 			status = http.StatusBadRequest
 		case "disabled", "unavailable", "missing_admin_token":
 			status = http.StatusServiceUnavailable
+		case "unsupported_command":
+			status = http.StatusNotImplemented
+		case "malformed_output":
+			status = http.StatusBadGateway
 		case "timeout":
 			status = http.StatusGatewayTimeout
 		case "unauthorized_device", "offline", "pair_failed", "connect_failed":
