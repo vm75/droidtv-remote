@@ -34,6 +34,11 @@ type mcpTool struct {
 	InputSchema map[string]any `json:"inputSchema"`
 }
 
+type mcpRichToolResult struct {
+	Content           []any
+	StructuredContent any
+}
+
 func obj(props map[string]any, required ...string) map[string]any {
 	m := map[string]any{"type": "object", "properties": props, "additionalProperties": false}
 	if len(required) > 0 {
@@ -90,6 +95,16 @@ func mcpTools() []mcpTool {
 		{"adb_enable_package", "Enable a freshly discovered third-party package for the current Android user after exact state confirmation.", adbPackageMutationSchema("enable")},
 		{"adb_disable_package", "Disable a freshly discovered third-party package for the current Android user after exact state confirmation.", adbPackageMutationSchema("disable")},
 		{"adb_uninstall_package", "Uninstall a freshly discovered third-party package for the current Android user only after exact state confirmation.", adbPackageMutationSchema("uninstall")},
+		{"adb_screenshot", "Capture one bounded PNG screenshot from the selected connected TV.", obj(map[string]any{"tv_id": str("TV ID")}, "tv_id")},
+		{"adb_logs", "Capture one finite, bounded, redacted log snapshot from the selected connected TV.", obj(map[string]any{"tv_id": str("TV ID")}, "tv_id")},
+		{"adb_reboot", "Send a normal reboot command after exact TV/name/connected-state confirmation.", obj(map[string]any{
+			"tv_id": str("TV ID"),
+			"confirmation": obj(map[string]any{
+				"tv_id": str("TV ID exactly as confirmed"),
+				"tv_name": str("TV display name exactly as confirmed"),
+				"state": map[string]any{"type": "string", "const": "connected"},
+			}, "tv_id", "tv_name", "state"),
+		}, "tv_id", "confirmation")},
 		{"install_apk", "Install or update one APK on the selected ADB-connected TV. MCP uses base64 and an 8 MiB decoded limit.", obj(map[string]any{"tv_id": str("TV ID"), "filename": str("APK filename ending in .apk"), "apk_base64": str("Base64-encoded APK; decoded payload must be 8 MiB or smaller")}, "tv_id", "filename", "apk_base64")},
 		{"send_key", "Send an Android KEYCODE_* command.", obj(map[string]any{"tv_id": str("TV ID"), "key": str("Android key code name")}, "tv_id", "key")},
 		{"send_text", "Send text through the TV IME, optionally followed by Enter.", obj(map[string]any{"tv_id": str("TV ID"), "text": str("Text to enter"), "enter": boolean("Send KEYCODE_ENTER after the text")}, "tv_id", "text")},
@@ -176,6 +191,9 @@ func toolResult(v any, err error) map[string]any {
 		}
 		return out
 	}
+	if rich, ok := v.(mcpRichToolResult); ok {
+		return map[string]any{"content": rich.Content, "structuredContent": rich.StructuredContent, "isError": false}
+	}
 	b, _ := json.Marshal(v)
 	return map[string]any{"content": []any{map[string]any{"type": "text", "text": string(b)}}, "structuredContent": v, "isError": false}
 }
@@ -191,6 +209,18 @@ func argStrings(a map[string]any, k string) []string {
 	return out
 }
 func argBool(a map[string]any, k string) bool { v, _ := a[k].(bool); return v }
+
+func mcpADBRebootRequest(a map[string]any) (ADBRebootRequest, error) {
+	raw, ok := a["confirmation"].(map[string]any)
+	if !ok {
+		return ADBRebootRequest{}, &ADBError{Code: "invalid_reboot_confirmation", Message: "Reboot confirmation is required"}
+	}
+	return ADBRebootRequest{Confirmation: ADBRebootConfirmation{
+		TVID:   argString(raw, "tv_id"),
+		TVName: argString(raw, "tv_name"),
+		State:  argString(raw, "state"),
+	}}, nil
+}
 
 func mcpADBPackageMutationRequest(a map[string]any, action string) (ADBPackageMutationRequest, error) {
 	raw, ok := a["confirmation"].(map[string]any)
@@ -380,6 +410,49 @@ func (s *Server) callTool(r *http.Request, name string, a map[string]any) (any, 
 			return nil, err
 		}
 		return s.adbPackageMutation(r.Context(), id, action, request)
+	case "adb_screenshot":
+		id := s.resolveTV(argString(a, "tv_id"))
+		if id == "" {
+			return nil, errors.New("Unknown TV")
+		}
+		capture, err := s.adbScreenshot(r.Context(), id)
+		if err != nil {
+			return nil, err
+		}
+		return mcpRichToolResult{
+			Content: []any{map[string]any{
+				"type": "image",
+				"data": base64.StdEncoding.EncodeToString(capture.Data),
+				"mimeType": "image/png",
+			}},
+			StructuredContent: map[string]any{"tv_id": id, "size_bytes": capture.Size, "sha256": capture.SHA256},
+		}, nil
+	case "adb_logs":
+		id := s.resolveTV(argString(a, "tv_id"))
+		if id == "" {
+			return nil, errors.New("Unknown TV")
+		}
+		capture, err := s.adbLogs(r.Context(), id)
+		if err != nil {
+			return nil, err
+		}
+		return mcpRichToolResult{
+			Content: []any{map[string]any{"type": "text", "text": capture.Warning + "\n\n" + capture.Text}},
+			StructuredContent: map[string]any{
+				"tv_id": id, "size_bytes": capture.Size, "sha256": capture.SHA256,
+				"lines": capture.Lines, "truncated": capture.Truncated, "warning": capture.Warning,
+			},
+		}, nil
+	case "adb_reboot":
+		id := s.resolveTV(argString(a, "tv_id"))
+		if id == "" {
+			return nil, errors.New("Unknown TV")
+		}
+		request, err := mcpADBRebootRequest(a)
+		if err != nil {
+			return nil, err
+		}
+		return s.adbReboot(r.Context(), id, request)
 	case "install_apk":
 		id := s.resolveTV(argString(a, "tv_id"))
 		if id == "" {
