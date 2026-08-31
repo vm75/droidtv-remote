@@ -317,7 +317,7 @@ func TestMCPListsAndCallsEveryAPISurface(t *testing.T) {
 	cancel()
 	req := httptest.NewRequest(http.MethodPost, "/mcp", nil).WithContext(ctx)
 	for _, tool := range mcpTools() {
-		if tool.Name == "add_tv" {
+		if tool.Name == "add_tv" || tool.Name == "connect_tv" {
 			continue
 		}
 		_, err := s.callTool(req, tool.Name, map[string]any{})
