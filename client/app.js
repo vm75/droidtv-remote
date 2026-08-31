@@ -63,8 +63,16 @@ createApp({
         const adbPairCode = ref('');
         const adbConnectHost = ref('');
         const adbConnectPort = ref('');
+        const adbDiscoveryLoading = ref(false);
+        const adbDiscoveryMode = ref('launchable');
+        const adbDiscoveryPackages = ref([]);
+        const adbDiscoveryWarnings = ref([]);
+        const adbDiscoveryError = ref('');
+        const adbDiscoveryPreview = ref(false);
+        const adbImporting = ref(false);
         let adbStatusInterval = null;
         let adbRequestGeneration = 0;
+        let adbDiscoveryGeneration = 0;
 
         // Cookie helpers to avoid collisions on subpaths
         const getCookiePath = () => {
@@ -113,6 +121,15 @@ createApp({
             if (connecting.value) return 'Connecting';
             return 'Disconnected';
         });
+        const adbDiscoveryVisiblePackages = computed(() => {
+            if (adbDiscoveryMode.value === 'all') return adbDiscoveryPackages.value;
+            return adbDiscoveryPackages.value.filter(item => item.tv_launchable);
+        });
+        const adbDiscoverySelected = computed(() =>
+            adbDiscoveryPackages.value.filter(item =>
+                item.tv_launchable && !item.existing_launcher_id && item.selected
+            )
+        );
         const tvStorageKey = `droidtvRemote:selectedTv:${getCookiePath()}`;
         const getStoredTvId = () => {
             try {
@@ -275,10 +292,15 @@ createApp({
             const changed = tvId !== selectedTvId.value;
             if (changed) {
                 adbRequestGeneration++;
+                adbDiscoveryGeneration++;
                 adbStatus.value = null;
                 adbError.value = '';
                 adbMessage.value = '';
                 adbPairCode.value = '';
+                adbDiscoveryPackages.value = [];
+                adbDiscoveryWarnings.value = [];
+                adbDiscoveryError.value = '';
+                adbDiscoveryPreview.value = false;
             }
             selectedTvId.value = tvId;
             rememberSelectedTv(tvId);
@@ -507,6 +529,7 @@ createApp({
 
         const openADBView = async () => {
             currentView.value = 'adb';
+            clearADBDiscovery();
             showTvMenu.value = false;
             seedADBHosts();
             adbTokenInput.value = '';
@@ -522,6 +545,7 @@ createApp({
         };
 
         const closeADBView = () => {
+            clearADBDiscovery();
             adbTokenInput.value = '';
             adbPairCode.value = '';
             adbError.value = '';
@@ -674,6 +698,215 @@ createApp({
                 adbError.value = error.message || 'Failed to forget ADB association';
             } finally {
                 adbLoading.value = false;
+            }
+        };
+
+        const packageNameSuggestion = (packageId) => {
+            const parts = String(packageId || '').split('.');
+            let base = parts.length ? parts[parts.length - 1] : '';
+            if (!base && parts.length > 1) base = parts[parts.length - 2];
+            base = base.replace(/[_-]+/g, ' ').trim();
+            if (!base) return String(packageId || '');
+            return base.split(/\s+/).map(word =>
+                word.charAt(0).toUpperCase() + word.slice(1)
+            ).join(' ');
+        };
+
+        const clearADBDiscovery = () => {
+            adbDiscoveryGeneration++;
+            adbDiscoveryPackages.value = [];
+            adbDiscoveryWarnings.value = [];
+            adbDiscoveryError.value = '';
+            adbDiscoveryPreview.value = false;
+            adbDiscoveryLoading.value = false;
+            adbImporting.value = false;
+        };
+
+        const discoverADBApps = async () => {
+            const tvId = selectedTvId.value;
+            if (!tvId || !adbTokenConfigured.value) {
+                adbDiscoveryError.value = 'Select a TV and enter the ADB administrator token first.';
+                return;
+            }
+            const generation = ++adbDiscoveryGeneration;
+            adbDiscoveryLoading.value = true;
+            adbDiscoveryError.value = '';
+            adbDiscoveryPreview.value = false;
+            try {
+                const results = await Promise.all([
+                    adbFetch(tvId, 'packages'),
+                    fetch('api/apps').then(async response => {
+                        const data = await response.json();
+                        if (!response.ok) throw new Error(data.error || 'Failed to load shared launchers');
+                        return data;
+                    })
+                ]);
+                if (generation !== adbDiscoveryGeneration || tvId !== selectedTvId.value) return;
+
+                const packageResult = results[0];
+                const appResult = results[1];
+                const inventory = packageResult && packageResult.inventory ? packageResult.inventory : {};
+                const discovered = Array.isArray(inventory.packages) ? inventory.packages : [];
+                const shared = Array.isArray(appResult.apps) ? appResult.apps : [];
+                allApps.value = shared;
+
+                adbDiscoveryPackages.value = discovered.map(pkg => {
+                    const existing = shared.find(app => app.package_id === pkg.package_id);
+                    return {
+                        package_id: pkg.package_id || '',
+                        component: pkg.component || '',
+                        version_code: pkg.version_code || '',
+                        classification: pkg.classification || 'unknown',
+                        enabled: typeof pkg.enabled === 'boolean' ? pkg.enabled : null,
+                        tv_launchable: Boolean(pkg.tv_launchable),
+                        existing_launcher_id: existing ? existing.id : '',
+                        existing_launcher_name: existing ? existing.name : '',
+                        selected: false,
+                        import_name: existing ? existing.name : packageNameSuggestion(pkg.package_id)
+                    };
+                });
+                adbDiscoveryWarnings.value = Array.isArray(inventory.warnings) ? inventory.warnings : [];
+            } catch (error) {
+                if (generation !== adbDiscoveryGeneration || tvId !== selectedTvId.value) return;
+                adbDiscoveryPackages.value = [];
+                adbDiscoveryWarnings.value = [];
+                adbDiscoveryError.value = error.message || 'Failed to discover apps';
+            } finally {
+                if (generation === adbDiscoveryGeneration && tvId === selectedTvId.value) {
+                    adbDiscoveryLoading.value = false;
+                }
+            }
+        };
+
+        const setADBDiscoveryMode = (mode) => {
+            adbDiscoveryMode.value = mode === 'all' ? 'all' : 'launchable';
+            adbDiscoveryPreview.value = false;
+        };
+
+        const toggleADBDiscoverySelection = (item) => {
+            if (!item || !item.tv_launchable || item.existing_launcher_id) return;
+            item.selected = !item.selected;
+            adbDiscoveryPreview.value = false;
+        };
+
+        const reviewADBImport = () => {
+            adbDiscoveryError.value = '';
+            const selected = adbDiscoverySelected.value;
+            if (!selected.length) {
+                adbDiscoveryError.value = 'Select at least one unknown TV-launchable package to import.';
+                adbDiscoveryPreview.value = false;
+                return;
+            }
+            for (const item of selected) {
+                item.import_name = String(item.import_name || '').trim();
+                if (!item.import_name) {
+                    adbDiscoveryError.value = 'Every selected package needs a display name before import.';
+                    adbDiscoveryPreview.value = false;
+                    return;
+                }
+            }
+            const seen = {};
+            for (const item of selected) {
+                if (seen[item.package_id]) {
+                    adbDiscoveryError.value = 'A package can only be imported once.';
+                    adbDiscoveryPreview.value = false;
+                    return;
+                }
+                seen[item.package_id] = true;
+            }
+            adbDiscoveryPreview.value = true;
+        };
+
+        const cancelADBImportReview = () => {
+            adbDiscoveryPreview.value = false;
+            adbDiscoveryError.value = '';
+        };
+
+        const importDiscoveredADBApps = async () => {
+            if (!adbDiscoveryPreview.value || adbImporting.value) return;
+            const tvId = selectedTvId.value;
+            const generation = adbDiscoveryGeneration;
+            const selected = adbDiscoverySelected.value.map(item => ({
+                package_id: item.package_id,
+                name: String(item.import_name || '').trim()
+            }));
+            if (!tvId || !selected.length || selected.some(item => !item.name)) {
+                adbDiscoveryError.value = 'Review the selected packages and names before importing.';
+                return;
+            }
+
+            adbImporting.value = true;
+            adbDiscoveryError.value = '';
+            try {
+                const appsResponse = await fetch('api/apps');
+                const appsData = await appsResponse.json();
+                if (!appsResponse.ok) throw new Error(appsData.error || 'Failed to refresh shared launchers');
+                if (generation !== adbDiscoveryGeneration || tvId !== selectedTvId.value) {
+                    throw new Error('Selected TV changed before import. Run discovery again.');
+                }
+
+                let shared = Array.isArray(appsData.apps) ? appsData.apps.slice() : [];
+                const createdIds = [];
+                for (const item of selected) {
+                    if (generation !== adbDiscoveryGeneration || tvId !== selectedTvId.value) {
+                        throw new Error('Selected TV changed during import. Run discovery again.');
+                    }
+                    const existing = shared.find(app => app.package_id === item.package_id);
+                    if (existing) {
+                        continue;
+                    }
+                    const formData = new FormData();
+                    formData.append('name', item.name);
+                    formData.append('package_id', item.package_id);
+                    formData.append('icon_class', '');
+                    const response = await fetch('api/apps', { method: 'POST', body: formData });
+                    const data = await response.json();
+                    if (!response.ok) throw new Error(data.error || 'Failed to import ' + item.package_id);
+                    if (generation !== adbDiscoveryGeneration || tvId !== selectedTvId.value) {
+                        throw new Error('Selected TV changed during import. New shared launcher was saved, but TV availability was not changed.');
+                    }
+                    if (data.app) {
+                        shared.push(data.app);
+                        createdIds.push(data.app.id);
+                    }
+                }
+
+                const tv = tvs.value.find(item => item.id === tvId);
+                const existingIds = tv && Array.isArray(tv.app_ids) ? tv.app_ids.slice() : [];
+                const nextIds = existingIds.slice();
+                for (const id of createdIds) {
+                    if (nextIds.indexOf(id) === -1) nextIds.push(id);
+                }
+
+                if (createdIds.length) {
+                    const response = await fetch('api/tvs/' + encodeURIComponent(tvId) + '/apps', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ app_ids: nextIds })
+                    });
+                    const data = await response.json();
+                    if (!response.ok) throw new Error(data.error || 'Launchers were imported but TV availability could not be saved');
+                    if (generation !== adbDiscoveryGeneration || tvId !== selectedTvId.value) return;
+                    const tvIndex = tvs.value.findIndex(item => item.id === tvId);
+                    if (tvIndex !== -1) tvs.value[tvIndex] = data.tv;
+                }
+
+                if (generation !== adbDiscoveryGeneration || tvId !== selectedTvId.value) return;
+                allApps.value = shared;
+                adbDiscoveryPreview.value = false;
+                adbMessage.value = createdIds.length
+                    ? 'Imported ' + createdIds.length + ' launcher' + (createdIds.length === 1 ? '' : 's') + ' for this TV.'
+                    : 'No new launchers were needed; matching package IDs already exist.';
+                await discoverADBApps();
+                if (selectedTvId.value === tvId) await checkStatus();
+            } catch (error) {
+                if (generation === adbDiscoveryGeneration && tvId === selectedTvId.value) {
+                    adbDiscoveryError.value = error.message || 'App import failed';
+                }
+            } finally {
+                if (generation === adbDiscoveryGeneration && tvId === selectedTvId.value) {
+                    adbImporting.value = false;
+                }
             }
         };
 
@@ -1517,6 +1750,15 @@ createApp({
             adbPairCode,
             adbConnectHost,
             adbConnectPort,
+            adbDiscoveryLoading,
+            adbDiscoveryMode,
+            adbDiscoveryPackages,
+            adbDiscoveryWarnings,
+            adbDiscoveryError,
+            adbDiscoveryPreview,
+            adbImporting,
+            adbDiscoveryVisiblePackages,
+            adbDiscoverySelected,
 
             // Methods
             sendKey,
@@ -1542,6 +1784,12 @@ createApp({
             retryADB,
             disconnectADB,
             forgetADB,
+            discoverADBApps,
+            setADBDiscoveryMode,
+            toggleADBDiscoverySelection,
+            reviewADBImport,
+            cancelADBImportReview,
+            importDiscoveredADBApps,
             selectConfiguredTv,
             saveTvAppConfiguration,
             openAddApp,
