@@ -410,15 +410,17 @@ func (s *Server) adbConnect(ctx context.Context, id, endpoint string) (map[strin
 		return nil, err
 	}
 	s.setADBState(id, "connecting")
-	defer s.setADBState(id, "")
 	result, err := s.adb.Connect(ctx, endpoint)
 	if err != nil {
+		s.setADBState(id, "")
 		return nil, err
 	}
 	serial, target := result.Serial, result.Endpoint
 	if err := s.updateADBAssociation(id, &serial, &target, nil); err != nil {
+		s.setADBState(id, "")
 		return nil, err
 	}
+	s.setADBState(id, "")
 	state, err := s.adbState(ctx, id)
 	if err != nil {
 		return nil, err
