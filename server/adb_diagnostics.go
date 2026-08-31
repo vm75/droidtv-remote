@@ -98,8 +98,8 @@ func validateADBScreenshot(data []byte) error {
 
 func (s *Server) adbScreenshot(ctx context.Context, tvID string) (ADBScreenshotCapture, error) {
 	state := s.state(tvID)
-	state.adbDiagnosticMu.Lock()
-	defer state.adbDiagnosticMu.Unlock()
+	state.adbAdminMu.Lock()
+	defer state.adbAdminMu.Unlock()
 
 	serial, err := s.requireADBConnected(ctx, tvID)
 	if err != nil {
@@ -172,8 +172,8 @@ func countADBLogLines(text string) int {
 
 func (s *Server) adbLogs(ctx context.Context, tvID string) (ADBLogCapture, error) {
 	state := s.state(tvID)
-	state.adbDiagnosticMu.Lock()
-	defer state.adbDiagnosticMu.Unlock()
+	state.adbAdminMu.Lock()
+	defer state.adbAdminMu.Unlock()
 
 	serial, err := s.requireADBConnected(ctx, tvID)
 	if err != nil {
@@ -216,8 +216,8 @@ func (s *Server) setADBRebootOffline(tvID string) {
 
 func (s *Server) adbReboot(ctx context.Context, tvID string, request ADBRebootRequest) (map[string]any, error) {
 	state := s.state(tvID)
-	state.adbDiagnosticMu.Lock()
-	defer state.adbDiagnosticMu.Unlock()
+	state.adbAdminMu.Lock()
+	defer state.adbAdminMu.Unlock()
 
 	tv, err := s.copyTV(tvID)
 	if err != nil {
