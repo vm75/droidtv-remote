@@ -239,7 +239,7 @@ func (m *ADBManager) runHost(ctx context.Context, args ...string) (ADBResult, er
 
 func (m *ADBManager) runDevice(ctx context.Context, serial string, args ...string) (ADBResult, error) {
 	serial = strings.TrimSpace(serial)
-	if serial == "" || strings.HasPrefix(serial, "-") || strings.ContainsAny(serial, "\\r\\n\\t ") {
+	if serial == "" || strings.HasPrefix(serial, "-") || strings.ContainsAny(serial, "\r\n\t ") {
 		return ADBResult{}, &ADBError{Code: "invalid_target", Message: "An explicit ADB device serial is required"}
 	}
 	full := make([]string, 0, len(args)+2)
@@ -257,7 +257,7 @@ func (m *ADBManager) Version(ctx context.Context) (string, error) {
 	if line == "" {
 		line = strings.TrimSpace(result.Stderr)
 	}
-	if i := strings.IndexByte(line, '\\n'); i >= 0 {
+	if i := strings.IndexByte(line, '\n'); i >= 0 {
 		line = line[:i]
 	}
 	if line == "" {
