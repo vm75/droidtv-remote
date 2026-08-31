@@ -48,6 +48,7 @@ jobs:
           exit 1
 
   container:
+    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request' || startsWith(github.event.head_commit.message, 'Complete ADB issue')
     runs-on: ubuntu-latest
     strategy:
       matrix:
