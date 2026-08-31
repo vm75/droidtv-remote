@@ -15,6 +15,11 @@ const tvAppRequests = [];
 const appSaveRequests = [];
 const appReorderRequests = [];
 const adbRequests = [];
+const adbUploadRequests = [];
+const confirmations = [];
+let nextADBUploadResponse = null;
+let holdADBUpload = false;
+let pendingADBUpload = null;
 let failNextStatus = false;
 let failNextDiscovery = false;
 let deferredDiscoveryTv = '';
@@ -34,6 +39,71 @@ const sessionStorage = {
     setItem(key, value) { sessionValues.set(key, value); },
     removeItem(key) { sessionValues.delete(key); }
 };
+
+class FakeFormData {
+    constructor() {
+        this.values = new Map();
+    }
+    append(key, value) {
+        this.values.set(key, value);
+    }
+    get(key) {
+        return this.values.get(key);
+    }
+}
+
+function completeADBUpload(request) {
+    const tvId = decodeURIComponent(request.url.split('/')[2]);
+    const configured = nextADBUploadResponse;
+    nextADBUploadResponse = null;
+    if (request.upload && request.upload.onprogress) {
+        request.upload.onprogress({ lengthComputable: true, loaded: 50, total: 100 });
+    }
+    request.status = configured ? configured.status : 200;
+    request.responseText = JSON.stringify(configured ? configured.body : {
+        tv_id: tvId,
+        status: 'success',
+        operation: 'update',
+        sha256: 'abc123',
+        size_bytes: 4096,
+        package: {
+            package_id: 'tv.stream.alpha',
+            version_code: '13'
+        }
+    });
+    request.onload();
+}
+
+class FakeXMLHttpRequest {
+    constructor() {
+        this.upload = {};
+        this.headers = {};
+        this.status = 0;
+        this.responseText = '';
+    }
+    open(method, url) {
+        this.method = method;
+        this.url = url;
+    }
+    setRequestHeader(name, value) {
+        this.headers[name] = value;
+    }
+    send(body) {
+        this.body = body;
+        adbUploadRequests.push(this);
+        if (holdADBUpload) {
+            pendingADBUpload = this;
+            return;
+        }
+        completeADBUpload(this);
+    }
+    abort() {
+        if (this.onabort) this.onabort();
+    }
+}
+
+global.FormData = FakeFormData;
+global.XMLHttpRequest = FakeXMLHttpRequest;
 const adbStates = {
     living: { state: 'unpaired', enabled: true, available: true, paired: false, serial: null, endpoint: null, pair_guid: null },
     bedroom: { state: 'unpaired', enabled: true, available: true, paired: false, serial: null, endpoint: null, pair_guid: null }
@@ -48,7 +118,10 @@ global.window = {
     removeEventListener() {},
     isSecureContext: true,
     navigator: null,
-    confirm: () => true
+    confirm: message => {
+        confirmations.push(message);
+        return true;
+    }
 };
 global.document = { cookie: '', hidden: false };
 global.navigator = {
@@ -378,6 +451,56 @@ mountedCallbacks[0]();
     assert.equal(legacyConnect.tvId, 'living');
     assert.deepEqual(legacyConnect.body, { endpoint: '192.168.1.10:5555' });
     assert.equal(exposed.adbStatus.value.adb.state, 'connected');
+
+    // APK workflow validates locally, confirms the target TV, uploads one multipart APK,
+    // reports progress/results, and refreshes inventory without changing launcher records.
+    exposed.handleADBAPKFile({ target: { files: [{ name: 'not-an-apk.zip', size: 20 }] } });
+    assert.match(exposed.adbAPKError.value, /\.apk/i);
+    assert.equal(exposed.adbAPKFile.value, null);
+
+    const apkFile = { name: 'alpha-update.apk', size: 4096 };
+    exposed.handleADBAPKFile({ target: { files: [apkFile] } });
+    assert.equal(exposed.adbAPKFile.value, apkFile);
+    const launcherWritesBeforeInstall = appSaveRequests.length;
+    await exposed.installADBAPK();
+    assert.match(confirmations.at(-1), /Living Room/);
+    assert.match(confirmations.at(-1), /preserving app data/i);
+    assert.equal(adbUploadRequests.at(-1).url, 'api/tvs/living/adb/install-apk');
+    assert.equal(adbUploadRequests.at(-1).headers.Authorization, 'Bearer test-admin-token');
+    assert.equal(adbUploadRequests.at(-1).body.get('apk'), apkFile);
+    assert.equal(exposed.adbAPKUploading.value, false);
+    assert.equal(exposed.adbAPKProgress.value, 100);
+    assert.equal(exposed.adbAPKResult.value.tv_id, 'living');
+    assert.equal(exposed.adbAPKResult.value.package.package_id, 'tv.stream.alpha');
+    assert.equal(appSaveRequests.length, launcherWritesBeforeInstall);
+
+    // Stable backend failures are rendered with actionable UI text.
+    exposed.handleADBAPKFile({ target: { files: [{ name: 'signed-wrong.apk', size: 1024 }] } });
+    nextADBUploadResponse = {
+        status: 409,
+        body: { error: 'signatures do not match', code: 'signature_mismatch' }
+    };
+    await exposed.installADBAPK();
+    assert.match(exposed.adbAPKError.value, /signing identities/i);
+    assert.equal(exposed.adbAPKResult.value, null);
+
+    // Duplicate submission is ignored and TV switching is blocked until cancellation.
+    exposed.handleADBAPKFile({ target: { files: [{ name: 'slow.apk', size: 2048 }] } });
+    holdADBUpload = true;
+    const pendingInstall = exposed.installADBAPK();
+    assert.equal(exposed.adbAPKUploading.value, true);
+    const uploadCount = adbUploadRequests.length;
+    exposed.installADBAPK();
+    assert.equal(adbUploadRequests.length, uploadCount);
+    await exposed.selectTv('bedroom');
+    assert.equal(exposed.selectedTvId.value, 'living');
+    assert.match(exposed.adbAPKError.value, /cancel.*before switching/i);
+    exposed.cancelADBAPKUpload();
+    await pendingInstall;
+    holdADBUpload = false;
+    pendingADBUpload = null;
+    assert.equal(exposed.adbAPKUploading.value, false);
+    assert.match(exposed.adbAPKError.value, /canceled/i);
 
     await exposed.disconnectADB();
     assert.equal(exposed.adbStatus.value.adb.state, 'offline');
