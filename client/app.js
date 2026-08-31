@@ -47,6 +47,25 @@ createApp({
         const editingAppHasUploadedIcon = ref(false);
         const removeAppIcon = ref(false);
         const savingApp = ref(false);
+
+        // ADB administration state is deliberately separate from Remote v2.
+        const adbTokenInput = ref('');
+        const adbTokenConfigured = ref(false);
+        const adbStatus = ref(null);
+        const adbLoading = ref(false);
+        const adbError = ref('');
+        const adbMessage = ref('');
+        const adbSetupMode = ref('legacy');
+        const adbLegacyHost = ref('');
+        const adbLegacyPort = ref('5555');
+        const adbPairHost = ref('');
+        const adbPairPort = ref('');
+        const adbPairCode = ref('');
+        const adbConnectHost = ref('');
+        const adbConnectPort = ref('');
+        let adbStatusInterval = null;
+        let adbRequestGeneration = 0;
+
         // Cookie helpers to avoid collisions on subpaths
         const getCookiePath = () => {
             let path = window.location.pathname;
@@ -113,6 +132,28 @@ createApp({
                 console.warn('Unable to remember selected TV:', error);
             }
         };
+
+        const adbTokenStorageKey = `droidtvRemote:adbToken:${getCookiePath()}`;
+        const readADBToken = () => {
+            try {
+                return window.sessionStorage ? (window.sessionStorage.getItem(adbTokenStorageKey) || '') : '';
+            } catch (error) {
+                return '';
+            }
+        };
+        const writeADBToken = (token) => {
+            try {
+                if (!window.sessionStorage) return;
+                if (token) {
+                    window.sessionStorage.setItem(adbTokenStorageKey, token);
+                } else {
+                    window.sessionStorage.removeItem(adbTokenStorageKey);
+                }
+            } catch (error) {
+                // Session storage is optional; never log credentials or storage contents.
+            }
+        };
+        adbTokenConfigured.value = Boolean(readADBToken());
 
         // Initialize mute state from cookies (better than localStorage for subfolder scoping)
         const isMuted = ref(getCookie('tvMuted') === 'true');
@@ -232,6 +273,13 @@ createApp({
 
         const selectTv = async (tvId) => {
             const changed = tvId !== selectedTvId.value;
+            if (changed) {
+                adbRequestGeneration++;
+                adbStatus.value = null;
+                adbError.value = '';
+                adbMessage.value = '';
+                adbPairCode.value = '';
+            }
             selectedTvId.value = tvId;
             rememberSelectedTv(tvId);
             showTvMenu.value = false;
@@ -241,6 +289,9 @@ createApp({
             tvName.value = selectedTv.value ? selectedTv.value.name : 'Android TV';
             await checkStatus();
             if (changed || !connectionStatus.value) await connectToTV();
+            if (currentView.value === 'adb' && adbTokenConfigured.value) {
+                await checkADBStatus();
+            }
         };
 
         const toggleTvMenu = async () => {
@@ -336,6 +387,304 @@ createApp({
             allApps.value = data.apps || [];
         };
 
+        const validADBHost = (host) => {
+            host = (host || '').trim();
+            return Boolean(host) && host.length <= 255 && !/[\\s/]/.test(host);
+        };
+
+        const validADBPort = (port) => {
+            const text = String(port || '').trim();
+            if (!/^\\d{1,5}$/.test(text)) return false;
+            const value = Number(text);
+            return value >= 1 && value <= 65535;
+        };
+
+        const adbEndpoint = (host, port) => {
+            host = (host || '').trim();
+            port = String(port || '').trim();
+            if (!validADBHost(host) || !validADBPort(port)) {
+                throw new Error('Enter a valid ADB host and port');
+            }
+            if (host.indexOf(':') !== -1 && host.charAt(0) !== '[') {
+                return '[' + host + ']:' + port;
+            }
+            return host + ':' + port;
+        };
+
+        const adbErrorMessage = (data, status) => {
+            const code = data && data.code ? data.code : '';
+            if (status === 401 || code === 'unauthorized') return 'Administrator token was rejected. Enter it again.';
+            if (code === 'disabled') return 'ADB is disabled on this server.';
+            if (code === 'unavailable' || code === 'missing_admin_token') return 'ADB is unavailable on this server.';
+            if (code === 'timeout') return 'The ADB operation timed out. Check the TV and network, then retry.';
+            if (code === 'unauthorized_device') return 'Accept the debugging authorization prompt shown on the TV.';
+            if (code === 'offline') return 'The TV is offline or unreachable over ADB.';
+            if (code === 'invalid_endpoint') return 'Enter the explicit ADB host and port shown by the TV.';
+            if (code === 'invalid_pairing_code') return 'Enter the six-digit wireless debugging pairing code.';
+            return data && data.error ? data.error : 'ADB request failed';
+        };
+
+        const adbFetch = async (tvId, action, options) => {
+            const token = readADBToken();
+            if (!token) {
+                adbTokenConfigured.value = false;
+                throw new Error('Enter the ADB administrator token for this browser session.');
+            }
+            const headers = { 'Authorization': 'Bearer ' + token };
+            if (options && options.body) headers['Content-Type'] = 'application/json';
+            const requestOptions = {
+                method: options && options.method ? options.method : 'GET',
+                headers: headers
+            };
+            if (options && options.body) requestOptions.body = JSON.stringify(options.body);
+            const response = await fetch(
+                'api/tvs/' + encodeURIComponent(tvId) + '/adb/' + action,
+                requestOptions
+            );
+            const data = await response.json();
+            if (!response.ok) {
+                if (response.status === 401 || data.code === 'unauthorized') {
+                    writeADBToken('');
+                    adbTokenConfigured.value = false;
+                }
+                const error = new Error(adbErrorMessage(data, response.status));
+                error.code = data.code || '';
+                throw error;
+            }
+            return data;
+        };
+
+        const checkADBStatus = async () => {
+            const tvId = selectedTvId.value;
+            if (!tvId || !adbTokenConfigured.value) {
+                adbStatus.value = null;
+                return;
+            }
+            const generation = ++adbRequestGeneration;
+            try {
+                const data = await adbFetch(tvId, 'status');
+                if (generation !== adbRequestGeneration || tvId !== selectedTvId.value) return;
+                adbStatus.value = data;
+                adbError.value = '';
+            } catch (error) {
+                if (generation !== adbRequestGeneration || tvId !== selectedTvId.value) return;
+                adbStatus.value = null;
+                adbError.value = error.message || 'Failed to load ADB status';
+            }
+        };
+
+        const seedADBHosts = () => {
+            const host = selectedTv.value ? selectedTv.value.host : '';
+            if (!adbLegacyHost.value) adbLegacyHost.value = host;
+            if (!adbPairHost.value) adbPairHost.value = host;
+            if (!adbConnectHost.value) adbConnectHost.value = host;
+        };
+
+        const setADBToken = async () => {
+            const token = adbTokenInput.value.trim();
+            if (!token) {
+                adbError.value = 'Enter the ADB administrator token.';
+                return;
+            }
+            writeADBToken(token);
+            adbTokenInput.value = '';
+            adbTokenConfigured.value = true;
+            adbError.value = '';
+            adbMessage.value = '';
+            await checkADBStatus();
+        };
+
+        const clearADBToken = () => {
+            writeADBToken('');
+            adbTokenInput.value = '';
+            adbTokenConfigured.value = false;
+            adbStatus.value = null;
+            adbError.value = '';
+            adbMessage.value = '';
+            adbPairCode.value = '';
+            adbRequestGeneration++;
+        };
+
+        const openADBView = async () => {
+            currentView.value = 'adb';
+            showTvMenu.value = false;
+            seedADBHosts();
+            adbTokenInput.value = '';
+            adbPairCode.value = '';
+            adbError.value = '';
+            adbMessage.value = '';
+            adbTokenConfigured.value = Boolean(readADBToken());
+            if (adbStatusInterval) clearInterval(adbStatusInterval);
+            adbStatusInterval = setInterval(() => {
+                if (currentView.value === 'adb' && adbTokenConfigured.value) checkADBStatus();
+            }, 2000);
+            if (adbTokenConfigured.value) await checkADBStatus();
+        };
+
+        const closeADBView = () => {
+            adbTokenInput.value = '';
+            adbPairCode.value = '';
+            adbError.value = '';
+            adbMessage.value = '';
+            adbRequestGeneration++;
+            if (adbStatusInterval) {
+                clearInterval(adbStatusInterval);
+                adbStatusInterval = null;
+            }
+            currentView.value = 'remote';
+            checkStatus();
+        };
+
+        const connectADBEndpoint = async (endpoint) => {
+            const tvId = selectedTvId.value;
+            if (!tvId) {
+                adbError.value = 'Select a TV first.';
+                return;
+            }
+            adbLoading.value = true;
+            adbError.value = '';
+            adbMessage.value = 'Connecting with ADB…';
+            try {
+                await adbFetch(tvId, 'connect', {
+                    method: 'POST',
+                    body: { endpoint: endpoint }
+                });
+                adbMessage.value = 'ADB connection request completed.';
+                await checkADBStatus();
+            } catch (error) {
+                adbError.value = error.message || 'ADB connection failed';
+                adbMessage.value = '';
+            } finally {
+                adbLoading.value = false;
+            }
+        };
+
+        const connectLegacyADB = async () => {
+            try {
+                await connectADBEndpoint(adbEndpoint(adbLegacyHost.value, adbLegacyPort.value));
+            } catch (error) {
+                adbError.value = error.message;
+            }
+        };
+
+        const pairSecureADB = async () => {
+            const tvId = selectedTvId.value;
+            const code = adbPairCode.value.trim();
+            if (!/^\\d{6}$/.test(code)) {
+                adbError.value = 'Enter the six-digit wireless debugging pairing code.';
+                return;
+            }
+            let pairEndpoint;
+            try {
+                pairEndpoint = adbEndpoint(adbPairHost.value, adbPairPort.value);
+            } catch (error) {
+                adbError.value = error.message;
+                return;
+            }
+            adbPairCode.value = '';
+            adbLoading.value = true;
+            adbError.value = '';
+            adbMessage.value = 'Pairing with the TV…';
+            try {
+                await adbFetch(tvId, 'pair', {
+                    method: 'POST',
+                    body: { endpoint: pairEndpoint, code: code }
+                });
+                adbMessage.value = 'Pairing accepted. Connecting to the TV…';
+                const connectEndpoint = adbEndpoint(adbConnectHost.value, adbConnectPort.value);
+                await adbFetch(tvId, 'connect', {
+                    method: 'POST',
+                    body: { endpoint: connectEndpoint }
+                });
+                adbMessage.value = 'Secure wireless ADB is connected.';
+                await checkADBStatus();
+            } catch (error) {
+                adbError.value = error.message || 'Secure ADB setup failed';
+                adbMessage.value = '';
+            } finally {
+                adbPairCode.value = '';
+                adbLoading.value = false;
+            }
+        };
+
+        const retryADB = async () => {
+            const stored = adbStatus.value && adbStatus.value.adb ? adbStatus.value.adb.endpoint : '';
+            if (stored) {
+                await connectADBEndpoint(stored);
+                return;
+            }
+            if (adbSetupMode.value === 'secure') {
+                try {
+                    await connectADBEndpoint(adbEndpoint(adbConnectHost.value, adbConnectPort.value));
+                } catch (error) {
+                    adbError.value = error.message;
+                }
+            } else {
+                await connectLegacyADB();
+            }
+        };
+
+        const disconnectADB = async () => {
+            const tvId = selectedTvId.value;
+            if (!tvId) return;
+            adbLoading.value = true;
+            adbError.value = '';
+            adbMessage.value = 'Disconnecting ADB…';
+            try {
+                await adbFetch(tvId, 'disconnect', { method: 'POST' });
+                adbMessage.value = 'ADB disconnected.';
+                await checkADBStatus();
+            } catch (error) {
+                adbError.value = error.message || 'Failed to disconnect ADB';
+                adbMessage.value = '';
+            } finally {
+                adbLoading.value = false;
+            }
+        };
+
+        const forgetADB = async () => {
+            const tv = selectedTv.value;
+            if (!tv) return;
+            if (!window.confirm('Forget the local ADB association for ' + tv.name + '? This does not revoke the debugging host on the TV.')) return;
+            adbLoading.value = true;
+            adbError.value = '';
+            adbMessage.value = '';
+            try {
+                const data = await adbFetch(tv.id, 'forget', { method: 'POST' });
+                adbStatus.value = {
+                    tv_id: tv.id,
+                    tv_name: tv.name,
+                    remote: {
+                        connected: connectionStatus.value,
+                        connecting: connecting.value,
+                        pairing_in_progress: pairingInProgress.value
+                    },
+                    adb: {
+                        state: 'unpaired',
+                        enabled: true,
+                        available: true,
+                        paired: false,
+                        serial: null,
+                        endpoint: null,
+                        pair_guid: null
+                    }
+                };
+                adbMessage.value = data.warning || 'Local ADB association forgotten.';
+            } catch (error) {
+                adbError.value = error.message || 'Failed to forget ADB association';
+            } finally {
+                adbLoading.value = false;
+            }
+        };
+
+        const selectADBSetupMode = (mode) => {
+            adbSetupMode.value = mode === 'secure' ? 'secure' : 'legacy';
+            adbPairCode.value = '';
+            adbError.value = '';
+            adbMessage.value = '';
+            seedADBHosts();
+        };
+
         const openLauncherView = async () => {
             currentView.value = 'apps';
             showTvMenu.value = false;
@@ -349,6 +698,12 @@ createApp({
         };
 
         const openRemoteView = () => {
+            if (adbStatusInterval) {
+                clearInterval(adbStatusInterval);
+                adbStatusInterval = null;
+            }
+            adbTokenInput.value = '';
+            adbPairCode.value = '';
             currentView.value = 'remote';
             checkStatus();
         };
@@ -1096,6 +1451,11 @@ createApp({
             if (statusCheckInterval) {
                 clearInterval(statusCheckInterval);
             }
+            if (adbStatusInterval) {
+                clearInterval(adbStatusInterval);
+            }
+            adbTokenInput.value = '';
+            adbPairCode.value = '';
         });
 
         // Return reactive state and methods to template
@@ -1143,6 +1503,20 @@ createApp({
             editingAppHasUploadedIcon,
             removeAppIcon,
             savingApp,
+            adbTokenInput,
+            adbTokenConfigured,
+            adbStatus,
+            adbLoading,
+            adbError,
+            adbMessage,
+            adbSetupMode,
+            adbLegacyHost,
+            adbLegacyPort,
+            adbPairHost,
+            adbPairPort,
+            adbPairCode,
+            adbConnectHost,
+            adbConnectPort,
 
             // Methods
             sendKey,
@@ -1157,6 +1531,17 @@ createApp({
             forgetTv,
             openLauncherView,
             openRemoteView,
+            openADBView,
+            closeADBView,
+            setADBToken,
+            clearADBToken,
+            checkADBStatus,
+            selectADBSetupMode,
+            connectLegacyADB,
+            pairSecureADB,
+            retryADB,
+            disconnectADB,
+            forgetADB,
             selectConfiguredTv,
             saveTvAppConfiguration,
             openAddApp,
