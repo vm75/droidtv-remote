@@ -167,6 +167,20 @@ func TestADBEndpointAuthorizationNoStoreAndDisabledState(t *testing.T) {
 		t.Fatal("administrator token leaked in response")
 	}
 
+	w, out = adbRequestJSON(t, s, http.MethodGet, "/remote/api/tvs/"+id+"/adb/status", nil, "test-admin-token")
+	if w.Code != http.StatusOK || out["adb"].(map[string]any)["state"] != "unpaired" {
+		t.Fatalf("subpath ADB status: %d %#v", w.Code, out)
+	}
+
+	runner.failCommand = "version"
+	runner.failErr = &ADBError{Code: "unavailable", Message: "ADB executable is unavailable"}
+	w, out = adbRequestJSON(t, s, http.MethodGet, path, nil, "test-admin-token")
+	if w.Code != http.StatusOK || out["adb"].(map[string]any)["state"] != "unavailable" {
+		t.Fatalf("unavailable ADB status: %d %#v", w.Code, out)
+	}
+	runner.failCommand = ""
+	runner.failErr = nil
+
 	disabled, _ := adbTestServer(t, false)
 	disabledID := addADBTestTV(t, disabled, "Bedroom", "bed.local")
 	w, out = adbRequestJSON(t, disabled, http.MethodGet, "/api/tvs/"+disabledID+"/adb/status", nil, "test-admin-token")
