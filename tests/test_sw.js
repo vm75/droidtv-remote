@@ -33,6 +33,16 @@ const context = {
 
 vm.runInNewContext(fs.readFileSync(require.resolve('../client/sw.js'), 'utf8'), context);
 
+// API traffic, including APK bytes/results and all ADB status, must bypass the service worker cache.
+let apiResponded = false;
+listeners.fetch({
+    request: { url: 'https://remote.example/api/tvs/living/adb/install-apk' },
+    respondWith() {
+        apiResponded = true;
+    }
+});
+assert.equal(apiResponded, false, 'ADB install API requests must bypass service-worker caching');
+
 listeners.fetch({
     request: { url: 'https://remote.example/app.js' },
     respondWith(promise) {
