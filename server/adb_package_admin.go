@@ -246,12 +246,12 @@ func (s *Server) adbPackageMutation(ctx context.Context, tvID, action string, re
 		return nil, err
 	}
 	result := map[string]any{
-		"tv_id":                          tvID,
-		"action":                         action,
-		"package_id":                     pkg.PackageID,
-		"current_user":                   after.CurrentUser,
-		"installed":                      installed,
-		"launcher_availability_changed":  reconciled,
+		"tv_id":                         tvID,
+		"action":                        action,
+		"package_id":                    pkg.PackageID,
+		"current_user":                  after.CurrentUser,
+		"installed":                     installed,
+		"launcher_availability_changed": reconciled,
 	}
 	if installed {
 		result["package"] = resultPkg
