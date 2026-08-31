@@ -32,6 +32,11 @@ The endpoint is stateless. It accepts JSON-RPC requests over HTTP `POST`, MCP no
 | `send_text` | Send IME text and optional Enter |
 | `launch_app` | Launch an enabled package or app link |
 | `next_event` | Long-poll the next TV-scoped IME event |
+| `adb_status` | Authenticated per-TV ADB status, reported separately from Remote v2 |
+| `adb_pair` | Secure Wi-Fi ADB pair using explicit endpoint + six-digit code |
+| `adb_connect` | Connect ADB to an explicit per-TV endpoint |
+| `adb_disconnect` | Disconnect using the selected TV's stored ADB serial |
+| `adb_forget` | Forget only the selected TV's local ADB association |
 
 ## Example initialization
 
@@ -67,10 +72,12 @@ The endpoint is stateless. It accepts JSON-RPC requests over HTTP `POST`, MCP no
 
 Tool results include both JSON text content and `structuredContent`. Operational errors are returned as MCP tool errors rather than HTTP errors.
 
+The five `adb_*` tools require the same administrator bearer token as the ADB REST API. Set `DROIDTV_ADB_ADMIN_TOKEN` only in the server environment, then send `Authorization: Bearer <token>` on the MCP HTTP request. Missing or wrong credentials return an MCP tool error with structured `error.code = "unauthorized"`. ADB status/results never include the token or secure pairing code.
+
 ## Uploaded icons
 
 `add_app` and `update_app` accept `icon_base64` and `icon_content_type`. Supported types and limits match REST uploads: PNG, JPEG, WebP, or GIF, up to 2 MB, with file-signature validation.
 
 ## Security
 
-MCP can control TVs and change persistent configuration. Keep it on a trusted LAN or protect it with an authenticated HTTPS reverse proxy. Do not expose pairing codes, TV addresses, certificates, or keys.
+MCP can control TVs and change persistent configuration. Keep it on a trusted LAN or protect it with an authenticated HTTPS reverse proxy. ADB tools have an additional bearer-token gate and their responses are non-cacheable at the REST surface. Do not expose pairing codes, administrator tokens, TV addresses, certificates, or keys.
