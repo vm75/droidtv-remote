@@ -37,6 +37,9 @@ func (r *inventoryRunner) set(key, stdout string) {
 		r.responses = map[string]ADBResult{}
 	}
 	r.responses[key] = ADBResult{Stdout: stdout}
+	if r.errs != nil {
+		delete(r.errs, key)
+	}
 }
 
 func (r *inventoryRunner) setResult(key string, result ADBResult, err error) {
