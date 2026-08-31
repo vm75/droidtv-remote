@@ -95,5 +95,13 @@ Environment variables:
 - `DROIDTV_ADB_ENABLED=true|false` — opt in; default is false.
 - `DROIDTV_ADB_PATH=/usr/bin/adb` — optional executable override.
 - `DROIDTV_ADB_ADMIN_TOKEN=<secret>` — required and non-empty whenever ADB is enabled; provide it only as an environment variable.
+- `DROIDTV_ADB_APK_MAX_BYTES=134217728` — REST single-APK upload limit; default 128 MiB.
+- `DROIDTV_ADB_INSTALL_TIMEOUT=5m` — bounded `adb install -r` timeout; default 5 minutes.
 
 When disabled, startup and all existing Remote v2 behavior remain independent of ADB. When enabled, ADB administration is per-TV and requires `Authorization: Bearer <secret>` for every ADB REST endpoint and ADB MCP tool. Secure pairing codes are request-only and are not persisted. Forgetting an ADB association does not revoke the shared host key on the TV; use the TV debugging settings for remote revocation.
+
+### ADB APK temporary storage and proxies
+
+Single-APK REST uploads are streamed to generated mode-`0600` files in the container's OS temporary directory (normally `/tmp`) and deleted after each request. They are never stored under `/app/data` or retained as a repository. Ensure `/tmp` has enough free space for the configured maximum; read-only-root deployments must provide a writable `/tmp` or tmpfs.
+
+The authenticated REST endpoint accepts one multipart `apk` field and defaults to 128 MiB. MCP `install_apk` uses base64 and is intentionally limited to 8 MiB decoded / 16 MiB total JSON-RPC request size. Reverse proxies must allow a body slightly above the REST file limit and should use timeouts longer than `DROIDTV_ADB_INSTALL_TIMEOUT`; the repository nginx examples use 130m and 6 minutes for the defaults and disable request buffering.
