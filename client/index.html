@@ -445,7 +445,7 @@
                     Selected TV
                 </label>
                 <select id="adb-tv" v-if="tvs.length" :value="selectedTvId" @change="selectTv($event.target.value)"
-                    :disabled="adbAPKUploading || adbPackageMutating"
+                    :disabled="adbAPKUploading || adbPackageMutating || adbDiagnosticBusy"
                     class="w-full px-4 py-3 bg-slate-800 text-white rounded-xl border border-slate-600 focus:border-cyan-400 focus:outline-none disabled:opacity-50">
                     <option v-for="tv in tvs" :key="tv.id" :value="tv.id">{{ tv.name }} · {{ tv.host }}</option>
                 </select>
@@ -684,6 +684,64 @@
                     <p class="text-xs text-gray-500 mt-4 leading-relaxed">
                         Updates use normal <code>adb install -r</code> semantics: same-signature upgrades may preserve app data.
                         This UI does not allow downgrades, signing bypasses, split packages, bundles, URLs, or multiple files.
+                    </p>
+                </section>
+
+                <section class="glass rounded-3xl p-5 mb-5 shadow-xl">
+                    <div class="flex items-start gap-3 mb-4">
+                        <span class="w-10 h-10 rounded-full bg-slate-900 text-cyan-300 flex items-center justify-center flex-shrink-0">
+                            <i class="mdi mdi-stethoscope text-xl"></i>
+                        </span>
+                        <div>
+                            <h2 class="text-lg font-bold text-white">Diagnostics & reboot</h2>
+                            <p class="text-xs text-gray-400 mt-1">
+                                Bounded one-shot diagnostics for {{ selectedTv ? selectedTv.name : 'the selected TV' }}.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="rounded-xl border border-yellow-900 bg-yellow-950 bg-opacity-20 px-3 py-2 mb-4">
+                        <p class="text-xs text-yellow-200 leading-relaxed">
+                            Device logs can contain sensitive app, account, network, and content information. Downloads are finite and redacted for obvious admin/pairing secrets, but review them before sharing.
+                        </p>
+                    </div>
+
+                    <div v-if="adbDiagnosticError" role="alert"
+                        class="rounded-xl bg-red-950 bg-opacity-40 border border-red-900 px-3 py-2 mb-3 text-sm text-red-200">
+                        {{ adbDiagnosticError }}
+                    </div>
+                    <div v-if="adbDiagnosticMessage" role="status"
+                        class="rounded-xl bg-cyan-950 bg-opacity-30 border border-cyan-900 px-3 py-2 mb-3 text-sm text-cyan-200">
+                        {{ adbDiagnosticMessage }}
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-2">
+                        <button type="button" @click="downloadADBDiagnostic('screenshot')"
+                            :disabled="!!adbDiagnosticBusy || !adbStatus || !adbStatus.adb || adbStatus.adb.state !== 'connected'"
+                            class="px-2 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold disabled:opacity-40">
+                            <i class="mdi mdi-monitor-screenshot block text-lg mb-1"></i>
+                            Screenshot
+                        </button>
+                        <button type="button" @click="downloadADBDiagnostic('logs')"
+                            :disabled="!!adbDiagnosticBusy || !adbStatus || !adbStatus.adb || adbStatus.adb.state !== 'connected'"
+                            class="px-2 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold disabled:opacity-40">
+                            <i class="mdi mdi-text-box-search-outline block text-lg mb-1"></i>
+                            Download logs
+                        </button>
+                        <button type="button" @click="rebootADBTV"
+                            :disabled="!!adbDiagnosticBusy || !adbStatus || !adbStatus.adb || adbStatus.adb.state !== 'connected'"
+                            class="px-2 py-3 rounded-xl border border-red-900 text-red-300 hover:bg-red-950 text-xs font-semibold disabled:opacity-40">
+                            <i class="mdi mdi-restart block text-lg mb-1"></i>
+                            Reboot TV
+                        </button>
+                    </div>
+
+                    <p v-if="adbDiagnosticBusy" class="text-xs text-cyan-300 mt-3" aria-live="polite">
+                        <i class="mdi mdi-loading mdi-spin mr-1"></i>
+                        {{ adbDiagnosticBusy === 'reboot' ? 'Sending reboot command…' : 'Capturing bounded ' + adbDiagnosticBusy + '…' }}
+                    </p>
+                    <p class="text-xs text-gray-500 mt-4 leading-relaxed">
+                        Screenshots and logs are captured in memory and are not retained by the server. Reboot sends only a normal reboot request; disconnect is expected and boot completion is not claimed.
                     </p>
                 </section>
 
