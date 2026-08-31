@@ -309,8 +309,8 @@ func (s *Server) installAPKArtifact(ctx context.Context, id string, artifact adb
 		return nil, err
 	}
 	state := s.state(id)
-	state.adbInstallMu.Lock()
-	defer state.adbInstallMu.Unlock()
+	state.adbAdminMu.Lock()
+	defer state.adbAdminMu.Unlock()
 
 	serial, err := s.requireADBConnected(ctx, id)
 	if err != nil {
