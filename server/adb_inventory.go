@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
 	"sort"
 	"strconv"
@@ -440,4 +440,3 @@ func (s *Server) handleADBLaunchables(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, 200, result)
 }
 
-var _ = errors.New
