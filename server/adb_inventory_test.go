@@ -246,6 +246,14 @@ func TestADBInventoryAuthFailureOfflineUnsupportedAndTruncation(t *testing.T) {
 	if w.Code != http.StatusNotImplemented || out["code"] != "unsupported_command" {
 		t.Fatalf("unsupported mapping: %d %#v", w.Code, out)
 	}
+	mcp := mcpADBCall(t, s, "adb_launchables", map[string]any{"tv_id": id}, "inventory-token")
+	if mcp["isError"] != true {
+		t.Fatalf("unsupported MCP inventory unexpectedly succeeded: %#v", mcp)
+	}
+	mcpErr := mcp["structuredContent"].(map[string]any)["error"].(map[string]any)
+	if mcpErr["code"] != "unsupported_command" {
+		t.Fatalf("REST/MCP unsupported mismatch: REST=%#v MCP=%#v", out, mcpErr)
+	}
 
 	seedInventoryFixture(runner, "0")
 	runner.setResult(
