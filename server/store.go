@@ -36,10 +36,13 @@ type AppJSON struct {
 }
 
 type TV struct {
-	ID     string   `json:"id"`
-	Name   string   `json:"name"`
-	Host   string   `json:"host"`
-	AppIDs []string `json:"app_ids"`
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Host        string   `json:"host"`
+	AppIDs      []string `json:"app_ids"`
+	ADBSerial   string   `json:"adb_serial,omitempty"`
+	ADBEndpoint string   `json:"adb_endpoint,omitempty"`
+	ADBPairGUID string   `json:"adb_pair_guid,omitempty"`
 }
 
 func yamlValue(s string) string {
@@ -224,7 +227,17 @@ func saveTVs(path string, tvs []*TV, order []string) error {
 		if t == nil {
 			continue
 		}
-		fmt.Fprintf(&b, "- id: %s\n  name: %s\n  host: %s\n  app_ids:\n", quoteYAML(t.ID), quoteYAML(t.Name), quoteYAML(t.Host))
+		fmt.Fprintf(&b, "- id: %s\n  name: %s\n  host: %s\n", quoteYAML(t.ID), quoteYAML(t.Name), quoteYAML(t.Host))
+		if t.ADBSerial != "" {
+			fmt.Fprintf(&b, "  adb_serial: %s\n", quoteYAML(t.ADBSerial))
+		}
+		if t.ADBEndpoint != "" {
+			fmt.Fprintf(&b, "  adb_endpoint: %s\n", quoteYAML(t.ADBEndpoint))
+		}
+		if t.ADBPairGUID != "" {
+			fmt.Fprintf(&b, "  adb_pair_guid: %s\n", quoteYAML(t.ADBPairGUID))
+		}
+		b.WriteString("  app_ids:\n")
 		for _, aid := range t.AppIDs {
 			fmt.Fprintf(&b, "  - %s\n", quoteYAML(aid))
 		}
