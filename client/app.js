@@ -847,12 +847,14 @@ createApp({
 
                 let shared = Array.isArray(appsData.apps) ? appsData.apps.slice() : [];
                 const createdIds = [];
+                const availabilityIds = [];
                 for (const item of selected) {
                     if (generation !== adbDiscoveryGeneration || tvId !== selectedTvId.value) {
                         throw new Error('Selected TV changed during import. Run discovery again.');
                     }
                     const existing = shared.find(app => app.package_id === item.package_id);
                     if (existing) {
+                        if (availabilityIds.indexOf(existing.id) === -1) availabilityIds.push(existing.id);
                         continue;
                     }
                     const formData = new FormData();
@@ -868,17 +870,18 @@ createApp({
                     if (data.app) {
                         shared.push(data.app);
                         createdIds.push(data.app.id);
+                        availabilityIds.push(data.app.id);
                     }
                 }
 
                 const tv = tvs.value.find(item => item.id === tvId);
                 const existingIds = tv && Array.isArray(tv.app_ids) ? tv.app_ids.slice() : [];
                 const nextIds = existingIds.slice();
-                for (const id of createdIds) {
+                for (const id of availabilityIds) {
                     if (nextIds.indexOf(id) === -1) nextIds.push(id);
                 }
 
-                if (createdIds.length) {
+                if (availabilityIds.some(id => existingIds.indexOf(id) === -1)) {
                     const response = await fetch('api/tvs/' + encodeURIComponent(tvId) + '/apps', {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
@@ -896,7 +899,8 @@ createApp({
                 adbDiscoveryPreview.value = false;
                 adbMessage.value = createdIds.length
                     ? 'Imported ' + createdIds.length + ' launcher' + (createdIds.length === 1 ? '' : 's') + ' for this TV.'
-                    : 'No new launchers were needed; matching package IDs already exist.';
+                    : 'No duplicate launcher was created; matching package IDs were reused for this TV.';
+                adbImporting.value = false;
                 await discoverADBApps();
                 if (selectedTvId.value === tvId) await checkStatus();
             } catch (error) {
