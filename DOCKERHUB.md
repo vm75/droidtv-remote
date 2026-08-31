@@ -73,7 +73,7 @@ The existing configuration and data schemas remain compatible. `SERVER_PORT`, th
 
 ## MCP
 
-Connect an MCP client to `http://<server-ip>:7503/mcp`. The server exposes 16 tools covering TV and launcher management, connection and pairing, keys, text, app launching, status, and long-poll events. Use access controls before exposing MCP outside a trusted LAN.
+Connect an MCP client to `http://<server-ip>:7503/mcp`. The server exposes 25 tools covering TV and launcher management, Remote v2 controls, authenticated ADB connection/inventory, and bounded single-APK install/update. Use access controls before exposing MCP outside a trusted LAN; ADB tools additionally require `DROIDTV_ADB_ADMIN_TOKEN`.
 
 ## Updates and reverse proxies
 
