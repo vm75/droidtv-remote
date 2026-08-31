@@ -445,7 +445,7 @@
                     Selected TV
                 </label>
                 <select id="adb-tv" v-if="tvs.length" :value="selectedTvId" @change="selectTv($event.target.value)"
-                    :disabled="adbAPKUploading"
+                    :disabled="adbAPKUploading || adbPackageMutating"
                     class="w-full px-4 py-3 bg-slate-800 text-white rounded-xl border border-slate-600 focus:border-cyan-400 focus:outline-none disabled:opacity-50">
                     <option v-for="tv in tvs" :key="tv.id" :value="tv.id">{{ tv.name }} · {{ tv.host }}</option>
                 </select>
@@ -695,7 +695,7 @@
                                 On-demand package discovery from this TV. Names and icons are not downloaded.
                             </p>
                         </div>
-                        <button type="button" @click="discoverADBApps" :disabled="adbDiscoveryLoading || adbImporting || !selectedTvId"
+                        <button type="button" @click="discoverADBApps" :disabled="adbDiscoveryLoading || adbImporting || adbPackageMutating || !selectedTvId"
                             class="px-3 py-2 bg-cyan-700 hover:bg-cyan-600 text-white rounded-xl text-sm font-semibold disabled:opacity-40">
                             <i class="mdi mr-1" :class="adbDiscoveryLoading ? 'mdi-loading mdi-spin' : 'mdi-magnify'"></i>
                             {{ adbDiscoveryLoading ? 'Scanning' : (adbDiscoveryPackages.length ? 'Refresh' : 'Discover') }}
@@ -721,6 +721,14 @@
                     <div v-if="adbDiscoveryError" role="alert"
                         class="rounded-xl bg-red-950 bg-opacity-40 border border-red-900 px-3 py-2 mb-3 text-sm text-red-200">
                         {{ adbDiscoveryError }}
+                    </div>
+                    <div v-if="adbPackageError" role="alert"
+                        class="rounded-xl bg-red-950 bg-opacity-40 border border-red-900 px-3 py-2 mb-3 text-sm text-red-200">
+                        {{ adbPackageError }}
+                    </div>
+                    <div v-if="adbPackageMessage" role="status"
+                        class="rounded-xl bg-cyan-950 bg-opacity-30 border border-cyan-900 px-3 py-2 mb-3 text-sm text-cyan-200">
+                        {{ adbPackageMessage }}
                     </div>
 
                     <div v-if="adbDiscoveryPackages.length && !adbDiscoveryPreview"
@@ -756,6 +764,42 @@
                                     <p v-if="pkg.existing_launcher_id" class="text-xs text-green-300 mt-2">
                                         Already in shared launchers as “{{ pkg.existing_launcher_name }}”.
                                     </p>
+                                    <div v-if="pkg.protected" class="mt-3 rounded-xl border border-yellow-900 bg-yellow-950 bg-opacity-30 px-3 py-2">
+                                        <p class="text-xs font-semibold text-yellow-200">Protected core package · administration blocked</p>
+                                    </div>
+                                    <p v-else-if="pkg.classification !== 'third_party'" class="text-xs text-gray-500 mt-3">
+                                        System or unclassified packages are view-only.
+                                    </p>
+                                    <div v-else-if="pkg.enabled !== null" class="mt-3">
+                                        <p class="text-[11px] uppercase tracking-wider text-gray-500 mb-2">
+                                            Current-user package actions
+                                        </p>
+                                        <div class="grid grid-cols-3 gap-2">
+                                            <button type="button" @click="mutateADBPackage(pkg, 'clear')" :disabled="!!adbPackageMutating"
+                                                class="px-2 py-2 rounded-lg border border-orange-900 text-orange-300 hover:bg-orange-950 text-xs disabled:opacity-40">
+                                                Clear data
+                                            </button>
+                                            <button v-if="pkg.enabled" type="button" @click="mutateADBPackage(pkg, 'disable')" :disabled="!!adbPackageMutating"
+                                                class="px-2 py-2 rounded-lg bg-slate-800 text-gray-200 hover:bg-slate-700 text-xs disabled:opacity-40">
+                                                Disable
+                                            </button>
+                                            <button v-else type="button" @click="mutateADBPackage(pkg, 'enable')" :disabled="!!adbPackageMutating"
+                                                class="px-2 py-2 rounded-lg bg-slate-800 text-gray-200 hover:bg-slate-700 text-xs disabled:opacity-40">
+                                                Enable
+                                            </button>
+                                            <button type="button" @click="mutateADBPackage(pkg, 'uninstall')" :disabled="!!adbPackageMutating"
+                                                class="px-2 py-2 rounded-lg border border-red-900 text-red-300 hover:bg-red-950 text-xs disabled:opacity-40">
+                                                Uninstall
+                                            </button>
+                                        </div>
+                                        <p v-if="adbPackageMutating.indexOf(pkg.package_id + ':') === 0"
+                                            class="text-xs text-cyan-300 mt-2">
+                                            <i class="mdi mdi-loading mdi-spin mr-1"></i> Applying and verifying package state…
+                                        </p>
+                                    </div>
+                                    <p v-else class="text-xs text-yellow-300 mt-3">
+                                        Enabled state is unavailable, so package administration is blocked.
+                                    </p>
                                     <div v-if="pkg.selected && pkg.tv_launchable && !pkg.existing_launcher_id" class="mt-3">
                                         <label class="block text-xs text-gray-400 mb-1">Display name to review</label>
                                         <input v-model="pkg.import_name" type="text" maxlength="120" autocomplete="off"
@@ -771,8 +815,8 @@
                     </div>
 
                     <div v-if="adbDiscoveryPackages.length && !adbDiscoveryPreview" class="flex gap-2">
-                        <button type="button" @click="clearADBDiscovery"
-                            class="flex-1 px-3 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl text-sm">
+                        <button type="button" @click="clearADBDiscovery" :disabled="!!adbPackageMutating"
+                            class="flex-1 px-3 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl text-sm disabled:opacity-40">
                             Cancel
                         </button>
                         <button type="button" @click="reviewADBImport" :disabled="!adbDiscoverySelected.length"
