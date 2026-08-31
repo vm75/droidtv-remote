@@ -37,6 +37,7 @@ type ADBPackage struct {
 	VersionName    string `json:"version_name,omitempty"`
 	TVLaunchable   bool   `json:"tv_launchable"`
 	Component      string `json:"component,omitempty"`
+	Protected      bool   `json:"protected,omitempty"`
 }
 
 type ADBPackageInventory struct {
@@ -333,6 +334,7 @@ func (m *ADBManager) PackageInventory(ctx context.Context, serial string) (ADBPa
 		record := ADBPackage{
 			PackageID:      pkg,
 			Classification: "unknown",
+			Protected:      isProtectedADBPackage(pkg),
 			VersionCode:    packages[pkg],
 			TVLaunchable:   launchableByPackage[pkg] != "",
 			Component:      launchableByPackage[pkg],
