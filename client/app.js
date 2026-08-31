@@ -849,6 +849,10 @@ createApp({
 
         const mutateADBPackage = async (pkg, action) => {
             if (adbPackageMutating.value) return;
+            if (adbAPKUploading.value || adbDiagnosticBusy.value) {
+                adbPackageError.value = 'Wait for the current ADB administration action to finish.';
+                return;
+            }
             const allowed = { clear: true, enable: true, disable: true, uninstall: true };
             if (!allowed[action]) return;
             const tv = selectedTv.value;
@@ -1065,6 +1069,10 @@ createApp({
 
         const downloadADBDiagnostic = async (kind) => {
             if (adbDiagnosticBusy.value || (kind !== 'screenshot' && kind !== 'logs')) return;
+            if (adbAPKUploading.value || adbPackageMutating.value) {
+                adbDiagnosticError.value = 'Wait for the current ADB administration action to finish.';
+                return;
+            }
             const tv = selectedTv.value;
             const tvId = selectedTvId.value;
             const token = readADBToken();
@@ -1117,6 +1125,10 @@ createApp({
 
         const rebootADBTV = async () => {
             if (adbDiagnosticBusy.value) return;
+            if (adbAPKUploading.value || adbPackageMutating.value) {
+                adbDiagnosticError.value = 'Wait for the current ADB administration action to finish.';
+                return;
+            }
             const tv = selectedTv.value;
             const tvId = selectedTvId.value;
             const state = adbStatus.value && adbStatus.value.adb ? adbStatus.value.adb.state : '';
@@ -1238,6 +1250,10 @@ createApp({
             const file = adbAPKFile.value;
             const tv = selectedTv.value;
             if (adbAPKUploading.value) return;
+            if (adbPackageMutating.value || adbDiagnosticBusy.value) {
+                adbAPKError.value = 'Wait for the current ADB administration action to finish.';
+                return;
+            }
             adbAPKError.value = '';
             adbAPKResult.value = null;
             if (!tv || !selectedTvId.value) {
