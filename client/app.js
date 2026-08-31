@@ -389,12 +389,12 @@ createApp({
 
         const validADBHost = (host) => {
             host = (host || '').trim();
-            return Boolean(host) && host.length <= 255 && !/[\\s/]/.test(host);
+            return Boolean(host) && host.length <= 255 && !/[\s/]/.test(host);
         };
 
         const validADBPort = (port) => {
             const text = String(port || '').trim();
-            if (!/^\\d{1,5}$/.test(text)) return false;
+            if (!/^\d{1,5}$/.test(text)) return false;
             const value = Number(text);
             return value >= 1 && value <= 65535;
         };
@@ -570,7 +570,7 @@ createApp({
         const pairSecureADB = async () => {
             const tvId = selectedTvId.value;
             const code = adbPairCode.value.trim();
-            if (!/^\\d{6}$/.test(code)) {
+            if (!/^\d{6}$/.test(code)) {
                 adbError.value = 'Enter the six-digit wireless debugging pairing code.';
                 return;
             }
