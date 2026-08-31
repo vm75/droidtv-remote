@@ -190,3 +190,11 @@ The root `VERSION` value is shown in the PWA, returned by `/api/status`, and rep
 ## License
 
 MIT License. See [LICENSE](LICENSE).
+
+## Optional ADB administration
+
+ADB support is opt-in and disabled by default. The normal Android TV Remote v2 server and `go run ./server` do not require an ADB executable when `DROIDTV_ADB_ENABLED` is unset or false.
+
+The container includes Alpine's `android-tools` package pinned to ADB 35.0.2-r7. Enable the managed runtime with `DROIDTV_ADB_ENABLED=true`; override the executable only when needed with `DROIDTV_ADB_PATH` (the container default is `/usr/bin/adb`). The server keeps the ADB host identity under `data/adb/.android/`, so the existing `/app/data` volume also persists the debugging host key and secure Wi-Fi known-host database.
+
+The application uses a dedicated local ADB server socket and only stops a daemon it started. ADB command execution is bounded, uses argument arrays rather than shell strings, and all device commands require an explicit target serial. Public pairing, connection, inventory, install, package-administration, and diagnostic APIs are added in the later ADB integration phases.
