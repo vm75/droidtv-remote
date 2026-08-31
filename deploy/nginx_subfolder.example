@@ -3,6 +3,8 @@
 # and the server is running on port 7503.
 
     location ^~ /remote/ {
+        # 128 MiB APK default plus multipart overhead.
+        client_max_body_size 130m;
         # Strip /remote prefix before sending to backend
         rewrite ^/remote/(.*)$ /$1 break;
 
@@ -17,10 +19,12 @@
         proxy_set_header Connection "upgrade";
 
         proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
+        # Keep these above the default 5-minute ADB install timeout.
+        proxy_send_timeout 360s;
+        proxy_read_timeout 360s;
 
-        # Don't buffer responses
+        # Stream large APK requests and don't buffer responses.
+        proxy_request_buffering off;
         proxy_buffering off;
         # Never let a browser profile retain an old PWA release.
         add_header Cache-Control "no-cache, no-store, must-revalidate" always;
