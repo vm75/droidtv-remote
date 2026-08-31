@@ -295,6 +295,24 @@ func (s *Server) callTool(r *http.Request, name string, a map[string]any) (any, 
 			return nil, errors.New("Unknown TV")
 		}
 		return s.adbForget(id)
+	case "adb_device_info":
+		id := s.resolveTV(argString(a, "tv_id"))
+		if id == "" {
+			return nil, errors.New("Unknown TV")
+		}
+		return s.adbDeviceInfo(r.Context(), id)
+	case "adb_packages":
+		id := s.resolveTV(argString(a, "tv_id"))
+		if id == "" {
+			return nil, errors.New("Unknown TV")
+		}
+		return s.adbPackages(r.Context(), id)
+	case "adb_launchables":
+		id := s.resolveTV(argString(a, "tv_id"))
+		if id == "" {
+			return nil, errors.New("Unknown TV")
+		}
+		return s.adbLaunchables(r.Context(), id)
 	case "send_key":
 		if err := s.sendKey(argString(a, "tv_id"), argString(a, "key")); err != nil {
 			return nil, err
