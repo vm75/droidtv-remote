@@ -216,4 +216,6 @@ All ADB responses are `Cache-Control: no-store`. Status reports Remote v2 and AD
 
 For legacy TCP debugging, first enable network debugging on the TV and connect to an explicit `host:port`; the status surface reports `unauthorized` until the TV-side authorization prompt is accepted. For Android 11+ wireless debugging, use the TV's explicit pairing endpoint/code and then its explicit connect endpoint.
 
+The PWA exposes this as a separate **ADB administration** view (console icon in the remote header). The administrator token is stored only in browser `sessionStorage` for the current session and is cleared from the form immediately after submission. The view includes distinct Legacy TCP and Wireless debugging setup paths, independent Remote-v2/ADB status, retry/disconnect actions, and a local-forget warning. Pairing codes are cleared from the UI before the request completes.
+
 Forgetting a TV or its ADB association removes only the local per-TV association. Because all TVs use the shared managed ADB host identity, the server cannot selectively revoke that host key from one TV; revoke/forget it in the TV's debugging settings when required. Inventory, installation, package administration, and diagnostics are intentionally added only by later ADB phases.
