@@ -100,6 +100,12 @@ Environment variables:
 
 When disabled, startup and all existing Remote v2 behavior remain independent of ADB. When enabled, ADB administration is per-TV and requires `Authorization: Bearer <secret>` for every ADB REST endpoint and ADB MCP tool. Secure pairing codes are request-only and are not persisted. Forgetting an ADB association does not revoke the shared host key on the TV; use the TV debugging settings for remote revocation.
 
+### Bounded diagnostics and reboot
+
+The ADB admin view can download one screenshot (validated PNG, 8 MiB cap) or one finite logcat snapshot (2,000 requested lines, 512 KiB response cap, 10-second command deadline). Captures are memory-only and are not persisted. Logs redact the configured admin token plus obvious Bearer and pairing-code patterns, but device logs can still contain sensitive application/account/network/content data.
+
+Normal reboot requires confirmation tied to the exact TV ID/name and currently connected state. A success response means only that `adb reboot` was sent; disconnect is expected, and the server resumes normal status detection when the TV returns. Recovery/bootloader/factory-reset commands are not exposed.
+
 ### Guarded package administration
 
 Authenticated ADB discovery can administer only freshly observed third-party packages. Clear data, enable, disable, and current-user uninstall are fixed operations with exact TV/package/user/state confirmation and server-side revalidation. Core Android/Google TV packages, system/privileged paths, stale or unknown packages, and ambiguous state are rejected before mutation. Disable/uninstall may remove matching launcher availability from the selected TV only; shared launchers and other TVs are preserved.
