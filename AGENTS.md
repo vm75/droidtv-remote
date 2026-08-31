@@ -56,3 +56,5 @@ ADB is an optional administrator feature and must remain independent from Androi
 Never expose a general shell or arbitrary ADB command surface. Construct commands with argument arrays, require an explicit serial for device commands, apply deadlines and output limits, and keep credentials, pairing codes, APK bytes, screenshots, and log contents out of normal logs. ADB REST/MCP surfaces must be authenticated and `Cache-Control: no-store`.
 
 Package administration is limited to freshly discovered third-party packages and fixed clear/enable/disable/current-user-uninstall operations. Revalidate inventory, install path, protected denylist, and exact confirmation state before mutation; never accept generic package or shell flags.
+
+Diagnostics must remain one-shot and bounded: screenshot is a validated capped PNG, logs are finite/capped/redacted, and reboot is normal reboot only with exact TV/name/connected-state confirmation. Never persist capture contents by default or log them; audit only safe action/TV/time/result/size/hash metadata.
