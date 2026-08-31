@@ -627,6 +627,58 @@ mountedCallbacks[0]();
     assert.deepEqual(secureConnect.body, { endpoint: '192.168.1.10:42123' });
     assert.equal(exposed.adbStatus.value.adb.state, 'connected');
 
+    // One-shot diagnostics download with auth, suppress duplicates, lock the TV target,
+    // surface bounded-capture errors, and use server-provided safe filenames.
+    holdDiagnostic = true;
+    const screenshotRequestsBefore = adbRequests.filter(item => item.action === 'screenshot').length;
+    const pendingScreenshot = exposed.downloadADBDiagnostic('screenshot');
+    await flushPromises();
+    assert.equal(exposed.adbDiagnosticBusy.value, 'screenshot');
+    exposed.downloadADBDiagnostic('screenshot');
+    assert.equal(adbRequests.filter(item => item.action === 'screenshot').length, screenshotRequestsBefore + 1);
+    await exposed.selectTv('bedroom');
+    assert.equal(exposed.selectedTvId.value, 'living');
+    assert.match(exposed.adbDiagnosticError.value, /finish before switching/i);
+    resolveDiagnostic();
+    await pendingScreenshot;
+    holdDiagnostic = false;
+    resolveDiagnostic = null;
+    assert.equal(exposed.adbDiagnosticBusy.value, '');
+    assert.equal(diagnosticDownloads.at(-1).download, 'droidtv-remote-living-screenshot.png');
+    assert.match(exposed.adbDiagnosticMessage.value, /Screenshot downloaded/i);
+
+    await exposed.downloadADBDiagnostic('logs');
+    assert.equal(diagnosticDownloads.at(-1).download, 'droidtv-remote-living-logs.txt');
+    assert.match(exposed.adbDiagnosticMessage.value, /sensitive/i);
+
+    failNextDiagnostic = true;
+    const downloadsBeforeFailure = diagnosticDownloads.length;
+    await exposed.downloadADBDiagnostic('screenshot');
+    assert.match(exposed.adbDiagnosticError.value, /safety limit|configured safety limit/i);
+    assert.equal(diagnosticDownloads.length, downloadsBeforeFailure);
+
+    // Reboot can be canceled, then requires confirmation tied to TV name/id/connected state.
+    confirmResult = false;
+    const rebootRequestsBefore = diagnosticRequests.filter(item => item.action === 'reboot').length;
+    await exposed.rebootADBTV();
+    assert.match(confirmations.at(-1), /cannot confirm when boot has completed/i);
+    assert.equal(diagnosticRequests.filter(item => item.action === 'reboot').length, rebootRequestsBefore);
+
+    confirmResult = true;
+    await exposed.rebootADBTV();
+    const rebootRequest = diagnosticRequests.filter(item => item.action === 'reboot').at(-1);
+    assert.equal(rebootRequest.tvId, 'living');
+    assert.deepEqual(rebootRequest.body.confirmation, {
+        tv_id: 'living',
+        tv_name: 'Living Room',
+        state: 'connected'
+    });
+    assert.equal(exposed.adbStatus.value.adb.state, 'offline');
+    assert.match(exposed.adbDiagnosticMessage.value, /disconnect while restarting/i);
+    // Restore the fake TV for the remaining inventory tests.
+    adbStates.living = { ...adbStates.living, state: 'connected' };
+    await exposed.checkADBStatus();
+
     // Discovery is launchable-first, exact-package aware, and read-only until confirmed.
     const savesBeforeDiscovery = appSaveRequests.length;
     const tvWritesBeforeDiscovery = tvAppRequests.length;
