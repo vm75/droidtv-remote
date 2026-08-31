@@ -85,8 +85,10 @@ func (m *ADBManager) Devices(ctx context.Context) ([]ADBDevice, error) {
 		return nil, err
 	}
 	result, err := m.runHost(ctx, "devices")
-	if mapped := mapADBOperationError(result, err); mapped != nil {
-		return nil, mapped
+	if err != nil {
+		if mapped := mapADBOperationError(result, err); mapped != nil {
+			return nil, mapped
+		}
 	}
 	lines := strings.Split(result.Stdout, "\n")
 	out := make([]ADBDevice, 0, len(lines))
