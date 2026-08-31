@@ -226,6 +226,10 @@ func (m *ADBManager) run(ctx context.Context, args ...string) (ADBResult, error)
 		return ADBResult{}, &ADBError{Code: "disabled", Message: "ADB integration is disabled"}
 	}
 	if m.initErr != nil {
+		var adbErr *ADBError
+		if errors.As(m.initErr, &adbErr) {
+			return ADBResult{}, adbErr
+		}
 		return ADBResult{}, &ADBError{Code: "unavailable", Message: "ADB runtime storage is unavailable"}
 	}
 	deadline, cancel := context.WithTimeout(ctx, m.cfg.Timeout)
