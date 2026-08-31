@@ -282,13 +282,13 @@ func (s *Server) adbState(ctx context.Context, id string) (map[string]any, error
 	}
 	availability := s.adb.Availability(ctx)
 	out := map[string]any{
-		"state":      "disabled",
-		"enabled":    availability.Enabled,
-		"available":  availability.Available,
-		"serial":     nullable(tv.ADBSerial),
-		"endpoint":   nullable(tv.ADBEndpoint),
-		"pair_guid":  nullable(tv.ADBPairGUID),
-		"paired":     tv.ADBSerial != "" || tv.ADBPairGUID != "",
+		"state":     "disabled",
+		"enabled":   availability.Enabled,
+		"available": availability.Available,
+		"serial":    nullable(tv.ADBSerial),
+		"endpoint":  nullable(tv.ADBEndpoint),
+		"pair_guid": nullable(tv.ADBPairGUID),
+		"paired":    tv.ADBSerial != "" || tv.ADBPairGUID != "",
 	}
 	if availability.Version != "" {
 		out["version"] = availability.Version
@@ -397,11 +397,11 @@ func (s *Server) adbPair(ctx context.Context, id, endpoint, code string) (map[st
 		return nil, err
 	}
 	return map[string]any{
-		"tv_id":      id,
-		"state":      "offline",
-		"paired":     true,
-		"pair_guid":  nullable(guid),
-		"endpoint":   result.Endpoint,
+		"tv_id":     id,
+		"state":     "offline",
+		"paired":    true,
+		"pair_guid": nullable(guid),
+		"endpoint":  result.Endpoint,
 	}, nil
 }
 
