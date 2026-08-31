@@ -570,6 +570,7 @@ func TestADBAPKClientCancellationDuringInstallCleanup(t *testing.T) {
 	runner := &apkInstallRunner{
 		blockFirst: true,
 		started:    make(chan struct{}, 1),
+		release:    make(chan struct{}),
 	}
 	s, first, _ := apkInstallTestServer(t, runner)
 
