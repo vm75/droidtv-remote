@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	maxADBPackageRecords   = 5000
+	maxADBPackageRecords    = 5000
 	maxADBLaunchableRecords = 2000
 )
 
@@ -28,14 +28,14 @@ type ADBDeviceInfo struct {
 }
 
 type ADBPackage struct {
-	PackageID     string `json:"package_id"`
-	ThirdParty    bool   `json:"third_party"`
-	System        bool   `json:"system"`
-	Enabled       *bool  `json:"enabled,omitempty"`
-	VersionCode   string `json:"version_code,omitempty"`
-	VersionName   string `json:"version_name,omitempty"`
-	TVLaunchable  bool   `json:"tv_launchable"`
-	Component     string `json:"component,omitempty"`
+	PackageID    string `json:"package_id"`
+	ThirdParty   bool   `json:"third_party"`
+	System       bool   `json:"system"`
+	Enabled      *bool  `json:"enabled,omitempty"`
+	VersionCode  string `json:"version_code,omitempty"`
+	VersionName  string `json:"version_name,omitempty"`
+	TVLaunchable bool   `json:"tv_launchable"`
+	Component    string `json:"component,omitempty"`
 }
 
 type ADBPackageInventory struct {
@@ -439,4 +439,3 @@ func (s *Server) handleADBLaunchables(w http.ResponseWriter, r *http.Request) {
 	}
 	jsonResponse(w, 200, result)
 }
-
