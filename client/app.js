@@ -473,6 +473,12 @@ createApp({
             if (code === 'signature_mismatch') return 'The installed app and this APK use incompatible signing identities.';
             if (code === 'version_downgrade') return 'Android blocked this APK because version downgrades are not allowed.';
             if (code === 'package_manager_failure') return 'Android Package Manager rejected this APK.';
+            if (code === 'protected_package') return 'This package is protected from ADB administration.';
+            if (code === 'package_not_found') return 'This package is no longer installed for the current Android user. Refresh discovery.';
+            if (code === 'stale_package_state') return 'Package state changed since discovery. Refresh the package list and try again.';
+            if (code === 'package_state_unavailable') return 'Package state could not be verified safely. Refresh and try again.';
+            if (code === 'package_mutation_failed') return 'Android did not confirm the requested package state change.';
+            if (code === 'partial_failure') return data && data.error ? data.error : 'The package action may have completed, but the resulting state could not be fully reconciled.';
             if (code === 'canceled') return 'APK installation was canceled.';
             return data && data.error ? data.error : 'ADB request failed';
         };
@@ -879,6 +885,7 @@ createApp({
                 if (!result || result.tv_id !== tvId || result.package_id !== current.package_id || result.action !== action) {
                     throw new Error('Package administration result did not match the selected TV and package.');
                 }
+                adbPackageError.value = '';
                 adbPackageMessage.value = action.charAt(0).toUpperCase() + action.slice(1) +
                     ' completed for ' + current.package_id + '.';
                 await refreshTvs();
