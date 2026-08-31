@@ -280,7 +280,7 @@ func TestMCPListsAndCallsEveryAPISurface(t *testing.T) {
 
 	_, out = requestJSON(t, s, http.MethodPost, "/mcp", map[string]any{"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
 	tools := out["result"].(map[string]any)["tools"].([]any)
-	if len(tools) != 16 {
+	if len(tools) != 21 {
 		t.Fatalf("tool count = %d", len(tools))
 	}
 	wantTools := map[string]bool{
@@ -289,6 +289,8 @@ func TestMCPListsAndCallsEveryAPISurface(t *testing.T) {
 		"reorder_apps": true, "delete_app": true, "connect_tv": true,
 		"submit_pairing_code": true, "send_key": true, "send_text": true,
 		"launch_app": true, "next_event": true,
+		"adb_status": true, "adb_pair": true, "adb_connect": true,
+		"adb_disconnect": true, "adb_forget": true,
 	}
 	for _, raw := range tools {
 		name := raw.(map[string]any)["name"].(string)
