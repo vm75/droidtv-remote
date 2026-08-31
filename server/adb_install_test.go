@@ -140,7 +140,11 @@ func (r *apkInstallRunner) Run(ctx context.Context, path string, args []string, 
 				select {
 				case <-release:
 				case <-ctx.Done():
-					installErr = &ADBError{Code: "timeout", TimedOut: true, Message: "ADB command timed out"}
+					if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+						installErr = &ADBError{Code: "timeout", TimedOut: true, Message: "ADB command timed out"}
+					} else {
+						installErr = &ADBError{Code: "canceled", Message: "ADB command was canceled"}
+					}
 				}
 			}
 		}
@@ -207,7 +211,7 @@ func fakeAPK() []byte {
 	return []byte{'P', 'K', 0x03, 0x04, 'f', 'a', 'k', 'e', '-', 'a', 'p', 'k'}
 }
 
-func apkMultipartRequest(t *testing.T, s *Server, tvID, filename string, payload []byte, token string, extra bool) (*httptest.ResponseRecorder, map[string]any) {
+func apkMultipartRequestPath(t *testing.T, s *Server, path, filename string, payload []byte, token string, extra bool) (*httptest.ResponseRecorder, map[string]any) {
 	t.Helper()
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -226,7 +230,7 @@ func apkMultipartRequest(t *testing.T, s *Server, tvID, filename string, payload
 	if err := writer.Close(); err != nil {
 		t.Fatal(err)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/api/tvs/"+tvID+"/adb/install-apk", &body)
+	req := httptest.NewRequest(http.MethodPost, path, &body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -238,6 +242,11 @@ func apkMultipartRequest(t *testing.T, s *Server, tvID, filename string, payload
 		out = parseJSONMap(t, w.Body.Bytes())
 	}
 	return w, out
+}
+
+func apkMultipartRequest(t *testing.T, s *Server, tvID, filename string, payload []byte, token string, extra bool) (*httptest.ResponseRecorder, map[string]any) {
+	t.Helper()
+	return apkMultipartRequestPath(t, s, "/api/tvs/"+tvID+"/adb/install-apk", filename, payload, token, extra)
 }
 
 func assertTempDirEmpty(t *testing.T, dir string) {
@@ -530,6 +539,105 @@ func TestADBAPKPerTVSerializationAndCrossTVTargeting(t *testing.T) {
 	}
 	if !foundFirst || !foundSecond {
 		t.Fatalf("cross-TV install targeting missing: %#v", calls)
+	}
+}
+
+func TestADBAPKRetainedSubpathAndLargeBodyBound(t *testing.T) {
+	runner := &apkInstallRunner{}
+	s, first, _ := apkInstallTestServer(t, runner)
+
+	w, out := apkMultipartRequestPath(t, s, "/remote/api/tvs/"+first+"/adb/install-apk", "example.apk", fakeAPK(), "apk-token", false)
+	if w.Code != http.StatusOK || out["status"] != "success" {
+		t.Fatalf("retained-subpath install: %d %#v", w.Code, out)
+	}
+
+	runner = &apkInstallRunner{}
+	s, first, _ = apkInstallTestServer(t, runner)
+	s.adb.cfg.APKMaxBytes = 64 * 1024
+	large := append([]byte{'P', 'K', 0x03, 0x04}, bytes.Repeat([]byte{'x'}, 128*1024)...)
+	w, out = apkMultipartRequestPath(t, s, "/remote/api/tvs/"+first+"/adb/install-apk", "large.apk", large, "apk-token", false)
+	if w.Code != http.StatusRequestEntityTooLarge || out["code"] != "upload_too_large" {
+		t.Fatalf("large retained-subpath upload: %d %#v", w.Code, out)
+	}
+	_, installs, _, _, _ := runner.snapshot()
+	if installs != 0 {
+		t.Fatalf("oversized upload reached ADB: %d", installs)
+	}
+	assertTempDirEmpty(t, s.adbTempDir)
+}
+
+func TestADBAPKClientCancellationDuringInstallCleanup(t *testing.T) {
+	runner := &apkInstallRunner{
+		blockFirst: true,
+		started:    make(chan struct{}, 1),
+	}
+	s, first, _ := apkInstallTestServer(t, runner)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("apk", "example.apk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write(fakeAPK()); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequest(http.MethodPost, "/api/tvs/"+first+"/adb/install-apk", &body).WithContext(ctx)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer apk-token")
+	w := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		s.ServeHTTP(w, req)
+		close(done)
+	}()
+
+	select {
+	case <-runner.started:
+	case <-time.After(time.Second):
+		t.Fatal("install did not reach ADB before cancellation")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("canceled install handler did not return")
+	}
+	if w.Code != http.StatusRequestTimeout {
+		t.Fatalf("canceled install status=%d body=%s", w.Code, w.Body.String())
+	}
+	out := parseJSONMap(t, w.Body.Bytes())
+	if out["code"] != "canceled" {
+		t.Fatalf("canceled install body=%#v", out)
+	}
+	_, installs, _, paths, _ := runner.snapshot()
+	if installs != 1 || len(paths) != 1 {
+		t.Fatalf("canceled install calls=%d paths=%#v", installs, paths)
+	}
+	if _, err := os.Stat(paths[0]); !os.IsNotExist(err) {
+		t.Fatalf("temporary APK retained after client cancellation: %v", err)
+	}
+	assertTempDirEmpty(t, s.adbTempDir)
+}
+
+func TestADBAPKConfigDefaultsAndOverrides(t *testing.T) {
+	t.Setenv("DROIDTV_ADB_APK_MAX_BYTES", "")
+	t.Setenv("DROIDTV_ADB_INSTALL_TIMEOUT", "")
+	cfg := loadADBConfig(t.TempDir())
+	if cfg.APKMaxBytes != 128*1024*1024 || cfg.InstallTimeout != 5*time.Minute {
+		t.Fatalf("default APK config: bytes=%d timeout=%s", cfg.APKMaxBytes, cfg.InstallTimeout)
+	}
+
+	t.Setenv("DROIDTV_ADB_APK_MAX_BYTES", "1048576")
+	t.Setenv("DROIDTV_ADB_INSTALL_TIMEOUT", "45s")
+	cfg = loadADBConfig(t.TempDir())
+	if cfg.APKMaxBytes != 1048576 || cfg.InstallTimeout != 45*time.Second {
+		t.Fatalf("override APK config: bytes=%d timeout=%s", cfg.APKMaxBytes, cfg.InstallTimeout)
 	}
 }
 
