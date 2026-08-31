@@ -22,12 +22,14 @@ const (
 )
 
 type ADBConfig struct {
-	Enabled      bool
-	Path         string
-	Home         string
-	ServerSocket string
-	Timeout      time.Duration
-	MaxOutput    int64
+	Enabled        bool
+	Path           string
+	Home           string
+	ServerSocket   string
+	Timeout        time.Duration
+	InstallTimeout time.Duration
+	MaxOutput      int64
+	APKMaxBytes    int64
 }
 
 type ADBResult struct {
@@ -149,13 +151,27 @@ func loadADBConfig(root string) ADBConfig {
 	if path == "" {
 		path = "adb"
 	}
+	apkMaxBytes := int64(defaultADBAPKMaxBytes)
+	if raw := strings.TrimSpace(os.Getenv("DROIDTV_ADB_APK_MAX_BYTES")); raw != "" {
+		if value, err := strconv.ParseInt(raw, 10, 64); err == nil && value > 0 {
+			apkMaxBytes = value
+		}
+	}
+	installTimeout := defaultADBInstallTimeout
+	if raw := strings.TrimSpace(os.Getenv("DROIDTV_ADB_INSTALL_TIMEOUT")); raw != "" {
+		if value, err := time.ParseDuration(raw); err == nil && value > 0 {
+			installTimeout = value
+		}
+	}
 	return ADBConfig{
-		Enabled:      enabled,
-		Path:         path,
-		Home:         filepath.Join(root, "data", "adb"),
-		ServerSocket: adbServerSocket,
-		Timeout:      defaultADBTimeout,
-		MaxOutput:    defaultADBMaxOutput,
+		Enabled:        enabled,
+		Path:           path,
+		Home:           filepath.Join(root, "data", "adb"),
+		ServerSocket:   adbServerSocket,
+		Timeout:        defaultADBTimeout,
+		InstallTimeout: installTimeout,
+		MaxOutput:      defaultADBMaxOutput,
+		APKMaxBytes:    apkMaxBytes,
 	}
 }
 
@@ -221,7 +237,7 @@ func (m *ADBManager) env() []string {
 	return out
 }
 
-func (m *ADBManager) run(ctx context.Context, args ...string) (ADBResult, error) {
+func (m *ADBManager) runWithTimeout(ctx context.Context, timeout time.Duration, args ...string) (ADBResult, error) {
 	if m == nil || !m.cfg.Enabled {
 		return ADBResult{}, &ADBError{Code: "disabled", Message: "ADB integration is disabled"}
 	}
@@ -232,9 +248,16 @@ func (m *ADBManager) run(ctx context.Context, args ...string) (ADBResult, error)
 		}
 		return ADBResult{}, &ADBError{Code: "unavailable", Message: "ADB runtime storage is unavailable"}
 	}
-	deadline, cancel := context.WithTimeout(ctx, m.cfg.Timeout)
+	if timeout <= 0 {
+		timeout = m.cfg.Timeout
+	}
+	deadline, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	return m.runner.Run(deadline, m.cfg.Path, append([]string(nil), args...), m.env(), m.cfg.MaxOutput)
+}
+
+func (m *ADBManager) run(ctx context.Context, args ...string) (ADBResult, error) {
+	return m.runWithTimeout(ctx, m.cfg.Timeout, args...)
 }
 
 func (m *ADBManager) runHost(ctx context.Context, args ...string) (ADBResult, error) {
