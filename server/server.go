@@ -85,6 +85,9 @@ func NewServer(root, version string) (*Server, error) {
 	s := &Server{root: root, version: version, apps: map[string]*App{}, tvs: map[string]*TV{}, states: map[string]*TVState{}, events: map[string]*eventBucket{}, eventTimeout: 30 * time.Second, inactivityTimeout: 5 * time.Minute}
 	s.adb = NewADBManager(root, nil)
 	s.adbAdminToken = strings.TrimSpace(os.Getenv("DROIDTV_ADB_ADMIN_TOKEN"))
+	if s.adb.Enabled() && s.adbAdminToken == "" {
+		s.adb.initErr = &ADBError{Code: "missing_admin_token", Message: "ADB administrator token is required when ADB is enabled"}
+	}
 	s.config = loadConfig(filepath.Join(root, "data", "config.yaml"))
 	if err := s.loadApps(); err != nil {
 		return nil, err
