@@ -100,6 +100,10 @@ Environment variables:
 
 When disabled, startup and all existing Remote v2 behavior remain independent of ADB. When enabled, ADB administration is per-TV and requires `Authorization: Bearer <secret>` for every ADB REST endpoint and ADB MCP tool. Secure pairing codes are request-only and are not persisted. Forgetting an ADB association does not revoke the shared host key on the TV; use the TV debugging settings for remote revocation.
 
+### ADB APK sideloading
+
+The authenticated PWA ADB administration view accepts exactly one `.apk` file for the selected connected TV. Before upload it shows the filename/size and requires confirmation naming that TV. Same-signature upgrades use normal Android `adb install -r` behavior and may preserve app data; downgrade, signature-bypass, split-package, bundle, URL, and multi-file installs are not supported. Successful installs refresh package inventory without silently changing the shared launcher library.
+
 ### ADB APK temporary storage and proxies
 
 Single-APK REST uploads are streamed to generated mode-`0600` files in the container's OS temporary directory (normally `/tmp`) and deleted after each request. They are never stored under `/app/data` or retained as a repository. Ensure `/tmp` has enough free space for the configured maximum; read-only-root deployments must provide a writable `/tmp` or tmpfs.
