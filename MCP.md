@@ -44,6 +44,9 @@ The endpoint is stateless. It accepts JSON-RPC requests over HTTP `POST`, MCP no
 | `adb_enable_package` | Enable a freshly discovered third-party package for the current Android user after exact-state confirmation |
 | `adb_disable_package` | Disable a freshly discovered third-party package for the current Android user after exact-state confirmation |
 | `adb_uninstall_package` | Uninstall a freshly discovered third-party package for the current Android user only after exact-state confirmation |
+| `adb_screenshot` | Capture one bounded PNG; MCP returns a standard `image` content item plus safe size/SHA-256 metadata |
+| `adb_logs` | Capture one finite bounded/redacted log snapshot as text content plus safe metadata/warning |
+| `adb_reboot` | Send a normal reboot after exact TV ID/name/connected-state confirmation; reports command-sent only |
 | `install_apk` | Authenticated single-APK install/update using the same bounded backend as REST; MCP base64 is limited to 8 MiB decoded |
 
 ## Guarded package mutations
@@ -67,6 +70,25 @@ Example shape for disabling a package:
 ```
 
 Uninstall is current-user-only; no global/system uninstall, force-stop, permission mutation, settings mutation, or generic ADB shell tool is provided.
+
+## Diagnostics and reboot
+
+`adb_screenshot` uses the same 8 MiB raw capture cap and explicit selected-TV serial as REST, returning one MCP `image` content item with MIME type `image/png`. `adb_logs` returns a finite text content item from at most 2,000 requested logcat lines / 512 KiB after redaction, with a warning that device logs may still contain sensitive application information. Neither capture is retained by default.
+
+`adb_reboot` requires:
+
+```json
+{
+  "tv_id": "<tv-id>",
+  "confirmation": {
+    "tv_id": "<tv-id>",
+    "tv_name": "<exact current display name>",
+    "state": "connected"
+  }
+}
+```
+
+A successful reboot tool result means only that the normal reboot command was sent. The TV is expected to disconnect; boot completion is discovered later through normal ADB status polling.
 
 ## Example initialization
 
