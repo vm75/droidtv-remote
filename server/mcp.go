@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -62,6 +63,11 @@ func mcpTools() []mcpTool {
 		{"delete_app", "Delete a shared launcher from the library and all TVs.", obj(map[string]any{"app_id": str("Launcher ID")}, "app_id")},
 		{"connect_tv", "Start connecting or pairing a TV.", obj(map[string]any{"tv_id": str("TV ID")}, "tv_id")},
 		{"submit_pairing_code", "Submit the six-character code displayed by the TV.", obj(map[string]any{"tv_id": str("TV ID"), "code": str("Pairing code")}, "tv_id", "code")},
+		{"adb_status", "Get authenticated ADB status separately from Remote v2 state.", obj(map[string]any{"tv_id": str("TV ID")}, "tv_id")},
+		{"adb_pair", "Pair secure wireless ADB using an explicit pairing endpoint and six-digit code.", obj(map[string]any{"tv_id": str("TV ID"), "endpoint": str("Explicit pairing host:port"), "code": str("Six-digit pairing code")}, "tv_id", "endpoint", "code")},
+		{"adb_connect", "Connect ADB to an explicit host:port for the selected TV.", obj(map[string]any{"tv_id": str("TV ID"), "endpoint": str("Explicit connect host:port")}, "tv_id", "endpoint")},
+		{"adb_disconnect", "Disconnect the selected TV using its stored ADB serial.", obj(map[string]any{"tv_id": str("TV ID")}, "tv_id")},
+		{"adb_forget", "Forget only the selected TV's local ADB association.", obj(map[string]any{"tv_id": str("TV ID")}, "tv_id")},
 		{"send_key", "Send an Android KEYCODE_* command.", obj(map[string]any{"tv_id": str("TV ID"), "key": str("Android key code name")}, "tv_id", "key")},
 		{"send_text", "Send text through the TV IME, optionally followed by Enter.", obj(map[string]any{"tv_id": str("TV ID"), "text": str("Text to enter"), "enter": boolean("Send KEYCODE_ENTER after the text")}, "tv_id", "text")},
 		{"launch_app", "Launch an enabled shared launcher on a TV.", obj(map[string]any{"tv_id": str("TV ID"), "launcher_id": str("Launcher ID or configured package/app link")}, "tv_id", "launcher_id")},
@@ -72,7 +78,7 @@ func mcpTools() []mcpTool {
 func (s *Server) mcpHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, Mcp-Session-Id")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, Mcp-Session-Id, Authorization")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, DELETE, OPTIONS")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(204)
@@ -133,7 +139,12 @@ func (s *Server) handleMCP(r *http.Request, req rpcRequest) (any, error) {
 
 func toolResult(v any, err error) map[string]any {
 	if err != nil {
-		return map[string]any{"content": []any{map[string]any{"type": "text", "text": err.Error()}}, "isError": true}
+		out := map[string]any{"content": []any{map[string]any{"type": "text", "text": err.Error()}}, "isError": true}
+		var adbErr *ADBError
+		if errors.As(err, &adbErr) {
+			out["structuredContent"] = map[string]any{"error": adbStructuredError(err)}
+		}
+		return out
 	}
 	b, _ := json.Marshal(v)
 	return map[string]any{"content": []any{map[string]any{"type": "text", "text": string(b)}}, "structuredContent": v, "isError": false}
@@ -152,6 +163,11 @@ func argStrings(a map[string]any, k string) []string {
 func argBool(a map[string]any, k string) bool { v, _ := a[k].(bool); return v }
 
 func (s *Server) callTool(r *http.Request, name string, a map[string]any) (any, error) {
+	if strings.HasPrefix(name, "adb_") {
+		if err := s.requireADBAuthorization(r); err != nil {
+			return nil, err
+		}
+	}
 	switch name {
 	case "status":
 		id := s.resolveTV(argString(a, "tv_id"))
@@ -245,6 +261,39 @@ func (s *Server) callTool(r *http.Request, name string, a map[string]any) (any, 
 			return nil, err
 		}
 		return map[string]any{"status": "submitted"}, nil
+	case "adb_status":
+		id := s.resolveTV(argString(a, "tv_id"))
+		if id == "" {
+			return nil, errors.New("Unknown TV")
+		}
+		return s.adbStatusResult(r.Context(), id)
+	case "adb_pair":
+		id := s.resolveTV(argString(a, "tv_id"))
+		if id == "" {
+			return nil, errors.New("Unknown TV")
+		}
+		code := argString(a, "code")
+		result, err := s.adbPair(r.Context(), id, argString(a, "endpoint"), code)
+		code = ""
+		return result, err
+	case "adb_connect":
+		id := s.resolveTV(argString(a, "tv_id"))
+		if id == "" {
+			return nil, errors.New("Unknown TV")
+		}
+		return s.adbConnect(r.Context(), id, argString(a, "endpoint"))
+	case "adb_disconnect":
+		id := s.resolveTV(argString(a, "tv_id"))
+		if id == "" {
+			return nil, errors.New("Unknown TV")
+		}
+		return s.adbDisconnect(r.Context(), id)
+	case "adb_forget":
+		id := s.resolveTV(argString(a, "tv_id"))
+		if id == "" {
+			return nil, errors.New("Unknown TV")
+		}
+		return s.adbForget(id)
 	case "send_key":
 		if err := s.sendKey(argString(a, "tv_id"), argString(a, "key")); err != nil {
 			return nil, err
