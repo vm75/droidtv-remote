@@ -69,6 +69,11 @@ func main() {
 	for _, id := range ids {
 		s.disconnect(id)
 	}
+	adbShutdown, adbCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	if err := s.adb.Close(adbShutdown); err != nil {
+		log.Printf("ADB shutdown: %v", err)
+	}
+	adbCancel()
 	shutdown, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	_ = httpServer.Shutdown(shutdown)
