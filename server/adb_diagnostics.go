@@ -72,7 +72,8 @@ func safeDiagnosticFilename(tvID, suffix string) string {
 }
 
 func auditADBDiagnostic(action, tvID, result string, size int64, sha string) {
-	fields := fmt.Sprintf("adb_audit action=%s tv_id=%s at=%s result=%s", action, tvID, time.Now().UTC().Format(time.RFC3339), result)
+	safeTVID := adbDiagnosticNameRE.ReplaceAllString(tvID, "-")
+	fields := fmt.Sprintf("adb_audit action=%s tv_id=%s at=%s result=%s", action, safeTVID, time.Now().UTC().Format(time.RFC3339), result)
 	if size >= 0 {
 		fields += fmt.Sprintf(" size_bytes=%d", size)
 	}
@@ -151,6 +152,9 @@ func boundADBLogText(text string) (string, bool) {
 		if i := strings.IndexByte(text, '\n'); i >= 0 && i+1 < len(text) {
 			text = text[i+1:]
 		}
+	}
+	if !utf8.ValidString(text) {
+		text = strings.ToValidUTF8(text, "�")
 	}
 	return text, truncated
 }
