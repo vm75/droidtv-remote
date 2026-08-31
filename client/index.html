@@ -618,11 +618,11 @@
                     </div>
 
                     <label class="block rounded-2xl border border-dashed border-slate-600 bg-slate-900 px-4 py-4 cursor-pointer"
-                        :class="adbAPKUploading ? 'opacity-50 pointer-events-none' : 'hover:border-indigo-500'">
+                        :class="(adbAPKUploading || adbPackageMutating || adbDiagnosticBusy) ? 'opacity-50 pointer-events-none' : 'hover:border-indigo-500'">
                         <span class="text-sm font-semibold text-white">Choose one .apk file</span>
                         <span class="block text-xs text-gray-500 mt-1">The APK is uploaded only when you confirm installation.</span>
                         <input type="file" accept=".apk,application/vnd.android.package-archive" class="sr-only"
-                            :disabled="adbAPKUploading" @change="handleADBAPKFile">
+                            :disabled="adbAPKUploading || !!adbPackageMutating || !!adbDiagnosticBusy" @change="handleADBAPKFile">
                     </label>
 
                     <div v-if="adbAPKFile" class="rounded-2xl bg-slate-900 px-4 py-3 mt-3">
@@ -675,7 +675,7 @@
                             Cancel
                         </button>
                         <button v-else type="button" @click="installADBAPK"
-                            :disabled="!adbAPKFile || !selectedTvId"
+                            :disabled="!adbAPKFile || !selectedTvId || !!adbPackageMutating || !!adbDiagnosticBusy"
                             class="flex-1 px-3 py-3 bg-indigo-700 hover:bg-indigo-600 text-white rounded-xl text-sm font-semibold disabled:opacity-40">
                             Review & install
                         </button>
@@ -717,19 +717,19 @@
 
                     <div class="grid grid-cols-3 gap-2">
                         <button type="button" @click="downloadADBDiagnostic('screenshot')"
-                            :disabled="!!adbDiagnosticBusy || !adbStatus || !adbStatus.adb || adbStatus.adb.state !== 'connected'"
+                            :disabled="!!adbDiagnosticBusy || adbAPKUploading || !!adbPackageMutating || !adbStatus || !adbStatus.adb || adbStatus.adb.state !== 'connected'"
                             class="px-2 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold disabled:opacity-40">
                             <i class="mdi mdi-monitor-screenshot block text-lg mb-1"></i>
                             Screenshot
                         </button>
                         <button type="button" @click="downloadADBDiagnostic('logs')"
-                            :disabled="!!adbDiagnosticBusy || !adbStatus || !adbStatus.adb || adbStatus.adb.state !== 'connected'"
+                            :disabled="!!adbDiagnosticBusy || adbAPKUploading || !!adbPackageMutating || !adbStatus || !adbStatus.adb || adbStatus.adb.state !== 'connected'"
                             class="px-2 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold disabled:opacity-40">
                             <i class="mdi mdi-text-box-search-outline block text-lg mb-1"></i>
                             Download logs
                         </button>
                         <button type="button" @click="rebootADBTV"
-                            :disabled="!!adbDiagnosticBusy || !adbStatus || !adbStatus.adb || adbStatus.adb.state !== 'connected'"
+                            :disabled="!!adbDiagnosticBusy || adbAPKUploading || !!adbPackageMutating || !adbStatus || !adbStatus.adb || adbStatus.adb.state !== 'connected'"
                             class="px-2 py-3 rounded-xl border border-red-900 text-red-300 hover:bg-red-950 text-xs font-semibold disabled:opacity-40">
                             <i class="mdi mdi-restart block text-lg mb-1"></i>
                             Reboot TV
@@ -833,19 +833,19 @@
                                             Current-user package actions
                                         </p>
                                         <div class="grid grid-cols-3 gap-2">
-                                            <button type="button" @click="mutateADBPackage(pkg, 'clear')" :disabled="!!adbPackageMutating"
+                                            <button type="button" @click="mutateADBPackage(pkg, 'clear')" :disabled="!!adbPackageMutating || adbAPKUploading || !!adbDiagnosticBusy"
                                                 class="px-2 py-2 rounded-lg border border-orange-900 text-orange-300 hover:bg-orange-950 text-xs disabled:opacity-40">
                                                 Clear data
                                             </button>
-                                            <button v-if="pkg.enabled" type="button" @click="mutateADBPackage(pkg, 'disable')" :disabled="!!adbPackageMutating"
+                                            <button v-if="pkg.enabled" type="button" @click="mutateADBPackage(pkg, 'disable')" :disabled="!!adbPackageMutating || adbAPKUploading || !!adbDiagnosticBusy"
                                                 class="px-2 py-2 rounded-lg bg-slate-800 text-gray-200 hover:bg-slate-700 text-xs disabled:opacity-40">
                                                 Disable
                                             </button>
-                                            <button v-else type="button" @click="mutateADBPackage(pkg, 'enable')" :disabled="!!adbPackageMutating"
+                                            <button v-else type="button" @click="mutateADBPackage(pkg, 'enable')" :disabled="!!adbPackageMutating || adbAPKUploading || !!adbDiagnosticBusy"
                                                 class="px-2 py-2 rounded-lg bg-slate-800 text-gray-200 hover:bg-slate-700 text-xs disabled:opacity-40">
                                                 Enable
                                             </button>
-                                            <button type="button" @click="mutateADBPackage(pkg, 'uninstall')" :disabled="!!adbPackageMutating"
+                                            <button type="button" @click="mutateADBPackage(pkg, 'uninstall')" :disabled="!!adbPackageMutating || adbAPKUploading || !!adbDiagnosticBusy"
                                                 class="px-2 py-2 rounded-lg border border-red-900 text-red-300 hover:bg-red-950 text-xs disabled:opacity-40">
                                                 Uninstall
                                             </button>
