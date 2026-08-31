@@ -40,7 +40,33 @@ The endpoint is stateless. It accepts JSON-RPC requests over HTTP `POST`, MCP no
 | `adb_device_info` | Read allowlisted device properties and current user |
 | `adb_packages` | Read bounded installed-package inventory for the current user |
 | `adb_launchables` | Read Leanback launcher components for the current user |
+| `adb_clear_package` | Clear data for a freshly discovered third-party package after exact-state confirmation |
+| `adb_enable_package` | Enable a freshly discovered third-party package for the current Android user after exact-state confirmation |
+| `adb_disable_package` | Disable a freshly discovered third-party package for the current Android user after exact-state confirmation |
+| `adb_uninstall_package` | Uninstall a freshly discovered third-party package for the current Android user only after exact-state confirmation |
 | `install_apk` | Authenticated single-APK install/update using the same bounded backend as REST; MCP base64 is limited to 8 MiB decoded |
+
+## Guarded package mutations
+
+The four package-mutation tools accept only an exact package ID returned by authenticated `adb_packages`. Each call must also include a `confirmation` object containing the same `tv_id`, `package_id`, fixed action name, `current_user`, and observed `enabled` boolean. The server immediately refreshes inventory and rejects stale state, system/privileged packages, protected core packages, and unverifiable package paths before issuing any Package Manager command.
+
+Example shape for disabling a package:
+
+```json
+{
+  "tv_id": "<tv-id>",
+  "package_id": "tv.example.app",
+  "confirmation": {
+    "tv_id": "<tv-id>",
+    "package_id": "tv.example.app",
+    "action": "disable",
+    "current_user": 0,
+    "enabled": true
+  }
+}
+```
+
+Uninstall is current-user-only; no global/system uninstall, force-stop, permission mutation, settings mutation, or generic ADB shell tool is provided.
 
 ## Example initialization
 
