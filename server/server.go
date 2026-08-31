@@ -40,6 +40,7 @@ type TVState struct {
 	lastClientActivity time.Time
 	activeClients      int
 	adbState           string
+	adbInstallMu       sync.Mutex
 }
 
 type Event struct {
@@ -79,10 +80,11 @@ type Server struct {
 	inactivityTimeout time.Duration
 	adb               *ADBManager
 	adbAdminToken     string
+	adbTempDir        string
 }
 
 func NewServer(root, version string) (*Server, error) {
-	s := &Server{root: root, version: version, apps: map[string]*App{}, tvs: map[string]*TV{}, states: map[string]*TVState{}, events: map[string]*eventBucket{}, eventTimeout: 30 * time.Second, inactivityTimeout: 5 * time.Minute}
+	s := &Server{root: root, version: version, apps: map[string]*App{}, tvs: map[string]*TV{}, states: map[string]*TVState{}, events: map[string]*eventBucket{}, eventTimeout: 30 * time.Second, inactivityTimeout: 5 * time.Minute, adbTempDir: os.TempDir()}
 	s.adb = NewADBManager(root, nil)
 	s.adbAdminToken = strings.TrimSpace(os.Getenv("DROIDTV_ADB_ADMIN_TOKEN"))
 	if s.adb.Enabled() && s.adbAdminToken == "" {
@@ -674,6 +676,7 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/tvs/{tv_id}/adb/device", s.handleADBDeviceInfo)
 	m.HandleFunc("GET /api/tvs/{tv_id}/adb/packages", s.handleADBPackages)
 	m.HandleFunc("GET /api/tvs/{tv_id}/adb/launchables", s.handleADBLaunchables)
+	m.HandleFunc("POST /api/tvs/{tv_id}/adb/install-apk", s.handleADBInstallAPK)
 	m.Handle("/mcp", s.mcpHandler())
 	m.Handle("/mcp/", s.mcpHandler())
 	m.HandleFunc("/", s.handleStatic)
