@@ -70,9 +70,16 @@ createApp({
         const adbDiscoveryError = ref('');
         const adbDiscoveryPreview = ref(false);
         const adbImporting = ref(false);
+        const adbAPKFile = ref(null);
+        const adbAPKUploading = ref(false);
+        const adbAPKProgress = ref(null);
+        const adbAPKError = ref('');
+        const adbAPKResult = ref(null);
         let adbStatusInterval = null;
         let adbRequestGeneration = 0;
         let adbDiscoveryGeneration = 0;
+        let adbAPKGeneration = 0;
+        let adbAPKRequest = null;
 
         // Cookie helpers to avoid collisions on subpaths
         const getCookiePath = () => {
@@ -290,6 +297,10 @@ createApp({
 
         const selectTv = async (tvId) => {
             const changed = tvId !== selectedTvId.value;
+            if (changed && adbAPKUploading.value) {
+                adbAPKError.value = 'Cancel the APK installation before switching TVs.';
+                return;
+            }
             if (changed) {
                 adbRequestGeneration++;
                 adbDiscoveryGeneration++;
@@ -443,6 +454,15 @@ createApp({
             if (code === 'offline') return 'The TV is offline or unreachable over ADB.';
             if (code === 'invalid_endpoint') return 'Enter the explicit ADB host and port shown by the TV.';
             if (code === 'invalid_pairing_code') return 'Enter the six-digit wireless debugging pairing code.';
+            if (code === 'upload_too_large') return 'The APK exceeds the server upload limit. Check the configured ADB APK size limit.';
+            if (code === 'invalid_apk' || code === 'malformed_apk') return 'Android rejected this file as an invalid or malformed APK.';
+            if (code === 'insufficient_storage') return 'The TV does not have enough storage for this APK.';
+            if (code === 'incompatible_abi') return 'This APK does not support the TV CPU architecture.';
+            if (code === 'incompatible_sdk') return 'This APK is not compatible with the TV Android SDK version.';
+            if (code === 'signature_mismatch') return 'The installed app and this APK use incompatible signing identities.';
+            if (code === 'version_downgrade') return 'Android blocked this APK because version downgrades are not allowed.';
+            if (code === 'package_manager_failure') return 'Android Package Manager rejected this APK.';
+            if (code === 'canceled') return 'APK installation was canceled.';
             return data && data.error ? data.error : 'ADB request failed';
         };
 
@@ -545,6 +565,14 @@ createApp({
         };
 
         const closeADBView = () => {
+            if (adbAPKUploading.value && adbAPKRequest && typeof adbAPKRequest.abort === 'function') {
+                adbAPKGeneration++;
+                adbAPKRequest.abort();
+            }
+            adbAPKRequest = null;
+            adbAPKUploading.value = false;
+            adbAPKProgress.value = null;
+            adbAPKFile.value = null;
             clearADBDiscovery();
             adbTokenInput.value = '';
             adbPairCode.value = '';
@@ -912,6 +940,196 @@ createApp({
                     adbImporting.value = false;
                 }
             }
+        };
+
+        const clearADBAPKSelection = () => {
+            if (adbAPKUploading.value) return;
+            adbAPKFile.value = null;
+            adbAPKProgress.value = null;
+            adbAPKError.value = '';
+            adbAPKResult.value = null;
+        };
+
+        const handleADBAPKFile = (event) => {
+            if (adbAPKUploading.value) return;
+            const files = event && event.target && event.target.files ? event.target.files : [];
+            const file = files && files.length ? files[0] : null;
+            adbAPKError.value = '';
+            adbAPKResult.value = null;
+            adbAPKProgress.value = null;
+            if (!file) {
+                adbAPKFile.value = null;
+                return;
+            }
+            const name = String(file.name || '');
+            if (!/\.apk$/i.test(name)) {
+                adbAPKFile.value = null;
+                adbAPKError.value = 'Choose a single file with the .apk extension.';
+                return;
+            }
+            if (!file.size) {
+                adbAPKFile.value = null;
+                adbAPKError.value = 'The selected APK is empty.';
+                return;
+            }
+            adbAPKFile.value = file;
+        };
+
+        const parseADBUploadResponse = (request) => {
+            if (!request || !request.responseText) return {};
+            try {
+                return JSON.parse(request.responseText);
+            } catch (error) {
+                return {};
+            }
+        };
+
+        const finishADBAPKUpload = async (generation, tvId, request, transportError) => {
+            if (generation !== adbAPKGeneration || tvId !== selectedTvId.value) return;
+            adbAPKRequest = null;
+            adbAPKUploading.value = false;
+            if (transportError) {
+                adbAPKProgress.value = null;
+                adbAPKError.value = transportError;
+                return;
+            }
+            const data = parseADBUploadResponse(request);
+            if (request.status < 200 || request.status >= 300) {
+                if (request.status === 401 || data.code === 'unauthorized') {
+                    writeADBToken('');
+                    adbTokenConfigured.value = false;
+                }
+                adbAPKProgress.value = null;
+                adbAPKError.value = adbErrorMessage(data, request.status);
+                return;
+            }
+            if (!data || data.tv_id !== tvId) {
+                adbAPKProgress.value = null;
+                adbAPKError.value = 'The install result did not match the selected TV.';
+                return;
+            }
+            adbAPKProgress.value = 100;
+            adbAPKResult.value = data;
+            adbAPKError.value = '';
+            adbMessage.value = data.operation === 'update' ? 'APK update completed.' : 'APK installation completed.';
+            await discoverADBApps();
+            if (generation === adbAPKGeneration && tvId === selectedTvId.value) {
+                await checkADBStatus();
+            }
+        };
+
+        const installADBAPK = async () => {
+            const file = adbAPKFile.value;
+            const tv = selectedTv.value;
+            if (adbAPKUploading.value) return;
+            adbAPKError.value = '';
+            adbAPKResult.value = null;
+            if (!tv || !selectedTvId.value) {
+                adbAPKError.value = 'Select a TV before installing an APK.';
+                return;
+            }
+            if (!adbTokenConfigured.value || !readADBToken()) {
+                adbAPKError.value = 'Enter the ADB administrator token first.';
+                return;
+            }
+            if (!file) {
+                adbAPKError.value = 'Choose one APK file first.';
+                return;
+            }
+            if (!/\.apk$/i.test(String(file.name || '')) || !file.size) {
+                adbAPKError.value = 'Choose a non-empty .apk file.';
+                return;
+            }
+            const confirmed = window.confirm(
+                'Install “' + file.name + '” on ' + tv.name + '?\n\n' +
+                'If the same package and signing identity are already installed, Android may update it while preserving app data. ' +
+                'Downgrades and signing mismatches are not bypassed.'
+            );
+            if (!confirmed) return;
+
+            const token = readADBToken();
+            const tvId = selectedTvId.value;
+            const generation = ++adbAPKGeneration;
+            const formData = new FormData();
+            formData.append('apk', file, file.name);
+            adbAPKUploading.value = true;
+            adbAPKProgress.value = null;
+            adbAPKError.value = '';
+            adbMessage.value = 'Uploading APK to ' + tv.name + '…';
+
+            if (typeof XMLHttpRequest !== 'undefined') {
+                await new Promise(resolve => {
+                    const request = new XMLHttpRequest();
+                    adbAPKRequest = request;
+                    request.open('POST', 'api/tvs/' + encodeURIComponent(tvId) + '/adb/install-apk', true);
+                    request.setRequestHeader('Authorization', 'Bearer ' + token);
+                    if (request.upload) {
+                        request.upload.onprogress = event => {
+                            if (generation !== adbAPKGeneration || tvId !== selectedTvId.value) return;
+                            if (event && event.lengthComputable && event.total > 0) {
+                                adbAPKProgress.value = Math.min(99, Math.round((event.loaded / event.total) * 100));
+                            } else {
+                                adbAPKProgress.value = null;
+                            }
+                        };
+                    }
+                    request.onload = async () => {
+                        await finishADBAPKUpload(generation, tvId, request, '');
+                        resolve();
+                    };
+                    request.onerror = async () => {
+                        await finishADBAPKUpload(generation, tvId, request, 'Network connection was lost during APK upload.');
+                        resolve();
+                    };
+                    request.onabort = async () => {
+                        if (generation === adbAPKGeneration && tvId === selectedTvId.value) {
+                            adbAPKRequest = null;
+                            adbAPKUploading.value = false;
+                            adbAPKProgress.value = null;
+                            adbAPKError.value = 'APK installation canceled.';
+                            adbMessage.value = '';
+                        }
+                        resolve();
+                    };
+                    request.send(formData);
+                });
+                return;
+            }
+
+            try {
+                const response = await fetch('api/tvs/' + encodeURIComponent(tvId) + '/adb/install-apk', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + token },
+                    body: formData
+                });
+                const data = await response.json();
+                if (generation !== adbAPKGeneration || tvId !== selectedTvId.value) return;
+                const request = {
+                    status: response.status,
+                    responseText: JSON.stringify(data)
+                };
+                await finishADBAPKUpload(generation, tvId, request, '');
+            } catch (error) {
+                if (generation === adbAPKGeneration && tvId === selectedTvId.value) {
+                    adbAPKRequest = null;
+                    adbAPKUploading.value = false;
+                    adbAPKProgress.value = null;
+                    adbAPKError.value = 'Network connection was lost during APK upload.';
+                }
+            }
+        };
+
+        const cancelADBAPKUpload = () => {
+            if (!adbAPKUploading.value) return;
+            adbAPKGeneration++;
+            if (adbAPKRequest && typeof adbAPKRequest.abort === 'function') {
+                adbAPKRequest.abort();
+            }
+            adbAPKRequest = null;
+            adbAPKUploading.value = false;
+            adbAPKProgress.value = null;
+            adbAPKError.value = 'APK installation canceled.';
+            adbMessage.value = '';
         };
 
         const selectADBSetupMode = (mode) => {
@@ -1761,6 +1979,11 @@ createApp({
             adbDiscoveryError,
             adbDiscoveryPreview,
             adbImporting,
+            adbAPKFile,
+            adbAPKUploading,
+            adbAPKProgress,
+            adbAPKError,
+            adbAPKResult,
             adbDiscoveryVisiblePackages,
             adbDiscoverySelected,
 
@@ -1795,6 +2018,10 @@ createApp({
             reviewADBImport,
             cancelADBImportReview,
             importDiscoveredADBApps,
+            handleADBAPKFile,
+            clearADBAPKSelection,
+            installADBAPK,
+            cancelADBAPKUpload,
             selectConfiguredTv,
             saveTvAppConfiguration,
             openAddApp,
