@@ -76,10 +76,12 @@ type Server struct {
 	mux               *http.ServeMux
 	eventTimeout      time.Duration
 	inactivityTimeout time.Duration
+	adb               *ADBManager
 }
 
 func NewServer(root, version string) (*Server, error) {
 	s := &Server{root: root, version: version, apps: map[string]*App{}, tvs: map[string]*TV{}, states: map[string]*TVState{}, events: map[string]*eventBucket{}, eventTimeout: 30 * time.Second, inactivityTimeout: 5 * time.Minute}
+	s.adb = NewADBManager(root, nil)
 	s.config = loadConfig(filepath.Join(root, "data", "config.yaml"))
 	if err := s.loadApps(); err != nil {
 		return nil, err
