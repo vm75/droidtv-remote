@@ -175,8 +175,8 @@ func (s *Server) adbPackageMutation(ctx context.Context, tvID, action string, re
 	}
 
 	state := s.state(tvID)
-	state.adbPackageMu.Lock()
-	defer state.adbPackageMu.Unlock()
+	state.adbAdminMu.Lock()
+	defer state.adbAdminMu.Unlock()
 
 	serial, err := s.requireADBConnected(ctx, tvID)
 	if err != nil {
