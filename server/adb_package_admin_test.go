@@ -20,7 +20,9 @@ func newPackageAdminRunner() *packageAdminRunner {
 	return &packageAdminRunner{
 		packages: map[string]map[string]bool{
 			"living:5555": {
-				"tv.stream.alpha": true,
+				"tv.stream.alpha":            true,
+				"tv.vendor.priv":             true,
+				"com.google.android.tvlauncher": true,
 			},
 			"bedroom:5555": {
 				"tv.stream.beta": true,
@@ -89,6 +91,9 @@ func (r *packageAdminRunner) Run(ctx context.Context, path string, args []string
 	if len(cmd) >= 6 && cmd[0] == "shell" && cmd[1] == "pm" && cmd[2] == "path" {
 		pkg := cmd[len(cmd)-1]
 		if _, ok := r.packages[serial][pkg]; ok {
+			if pkg == "tv.vendor.priv" {
+				return ADBResult{Stdout: "package:/system/priv-app/" + pkg + "/base.apk\n"}, nil
+			}
 			return ADBResult{Stdout: "package:/data/app/" + pkg + "/base.apk\n"}, nil
 		}
 		if _, ok := r.system[serial][pkg]; ok {
@@ -224,6 +229,15 @@ func TestADBPackageAdministrationGuardsAndCurrentUserUninstall(t *testing.T) {
 func TestADBPackageAdministrationRejectsSystemProtectedAndStaleStateBeforeMutation(t *testing.T) {
 	s, runner, living, _, _ := packageAdminTestServer(t)
 
+	inventory, err := s.adb.PackageInventory(context.Background(), "living:5555")
+	if err != nil {
+		t.Fatal(err)
+	}
+	misleading, ok := findADBPackage(inventory, "com.google.android.tvlauncher")
+	if !ok || !misleading.ThirdParty || !misleading.Protected {
+		t.Fatalf("misleading vendor classification fixture was not represented as third-party + protected: %#v", misleading)
+	}
+
 	before := len(runner.snapshotCalls())
 	w, out := adbRequestJSON(t, s, http.MethodPost, "/api/tvs/"+living+"/adb/packages/clear",
 		packageConfirmation(living, "com.google.android.tvlauncher", "clear", 0, true), "test-admin-token")
@@ -240,6 +254,18 @@ func TestADBPackageAdministrationRejectsSystemProtectedAndStaleStateBeforeMutati
 		packageConfirmation(living, "com.vendor.system", "disable", 0, true), "test-admin-token")
 	if w.Code != http.StatusConflict || out["code"] != "protected_package" {
 		t.Fatalf("system package: %d %#v", w.Code, out)
+	}
+
+	w, out = adbRequestJSON(t, s, http.MethodPost, "/api/tvs/"+living+"/adb/packages/clear",
+		packageConfirmation(living, "tv.vendor.priv", "clear", 0, true), "test-admin-token")
+	if w.Code != http.StatusConflict || out["code"] != "protected_package" {
+		t.Fatalf("privileged path: %d %#v", w.Code, out)
+	}
+
+	w, out = adbRequestJSON(t, s, http.MethodPost, "/api/tvs/"+living+"/adb/packages/clear",
+		packageConfirmation(living, "tv.stream.missing", "clear", 0, true), "test-admin-token")
+	if w.Code != http.StatusConflict || out["code"] != "package_not_found" {
+		t.Fatalf("missing package: %d %#v", w.Code, out)
 	}
 
 	w, out = adbRequestJSON(t, s, http.MethodPost, "/api/tvs/"+living+"/adb/packages/disable",
