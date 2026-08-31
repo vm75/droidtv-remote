@@ -49,6 +49,21 @@ func stringsSchema(desc string) map[string]any {
 	return map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": desc}
 }
 
+func adbPackageMutationSchema(action string) map[string]any {
+	confirmation := obj(map[string]any{
+		"tv_id":        str("TV ID exactly as observed during fresh package discovery"),
+		"package_id":   str("Package ID exactly as observed during fresh package discovery"),
+		"action":       map[string]any{"type": "string", "const": action},
+		"current_user": map[string]any{"type": "integer", "minimum": 0, "description": "Current Android user observed during discovery"},
+		"enabled":      boolean("Enabled state observed during discovery"),
+	}, "tv_id", "package_id", "action", "current_user", "enabled")
+	return obj(map[string]any{
+		"tv_id":        str("TV ID"),
+		"package_id":   str("Exact package ID selected from authenticated package inventory"),
+		"confirmation": confirmation,
+	}, "tv_id", "package_id", "confirmation")
+}
+
 func mcpTools() []mcpTool {
 	return []mcpTool{
 		{"status", "Get connection status, enabled apps, and server version for a TV.", obj(map[string]any{"tv_id": str("TV ID; omitted only when exactly one TV exists")})},
@@ -71,6 +86,10 @@ func mcpTools() []mcpTool {
 		{"adb_device_info", "Read allowlisted device information for the selected ADB-connected TV.", obj(map[string]any{"tv_id": str("TV ID")}, "tv_id")},
 		{"adb_packages", "List the selected TV's bounded installed-package inventory for the current Android user.", obj(map[string]any{"tv_id": str("TV ID")}, "tv_id")},
 		{"adb_launchables", "List Leanback-launchable components for the selected TV and current Android user.", obj(map[string]any{"tv_id": str("TV ID")}, "tv_id")},
+		{"adb_clear_package", "Clear app data for a freshly discovered third-party package after exact state confirmation.", adbPackageMutationSchema("clear")},
+		{"adb_enable_package", "Enable a freshly discovered third-party package for the current Android user after exact state confirmation.", adbPackageMutationSchema("enable")},
+		{"adb_disable_package", "Disable a freshly discovered third-party package for the current Android user after exact state confirmation.", adbPackageMutationSchema("disable")},
+		{"adb_uninstall_package", "Uninstall a freshly discovered third-party package for the current Android user only after exact state confirmation.", adbPackageMutationSchema("uninstall")},
 		{"install_apk", "Install or update one APK on the selected ADB-connected TV. MCP uses base64 and an 8 MiB decoded limit.", obj(map[string]any{"tv_id": str("TV ID"), "filename": str("APK filename ending in .apk"), "apk_base64": str("Base64-encoded APK; decoded payload must be 8 MiB or smaller")}, "tv_id", "filename", "apk_base64")},
 		{"send_key", "Send an Android KEYCODE_* command.", obj(map[string]any{"tv_id": str("TV ID"), "key": str("Android key code name")}, "tv_id", "key")},
 		{"send_text", "Send text through the TV IME, optionally followed by Enter.", obj(map[string]any{"tv_id": str("TV ID"), "text": str("Text to enter"), "enter": boolean("Send KEYCODE_ENTER after the text")}, "tv_id", "text")},
@@ -172,6 +191,32 @@ func argStrings(a map[string]any, k string) []string {
 	return out
 }
 func argBool(a map[string]any, k string) bool { v, _ := a[k].(bool); return v }
+
+func mcpADBPackageMutationRequest(a map[string]any, action string) (ADBPackageMutationRequest, error) {
+	raw, ok := a["confirmation"].(map[string]any)
+	if !ok {
+		return ADBPackageMutationRequest{}, &ADBError{Code: "invalid_package", Message: "Package mutation confirmation is required"}
+	}
+	userValue, ok := raw["current_user"].(float64)
+	if !ok || userValue < 0 || userValue != float64(int(userValue)) {
+		return ADBPackageMutationRequest{}, &ADBError{Code: "invalid_package", Message: "Confirmation current_user is invalid"}
+	}
+	enabled, ok := raw["enabled"].(bool)
+	if !ok {
+		return ADBPackageMutationRequest{}, &ADBError{Code: "invalid_package", Message: "Confirmation enabled state is required"}
+	}
+	user := int(userValue)
+	return ADBPackageMutationRequest{
+		PackageID: argString(a, "package_id"),
+		Confirmation: ADBPackageConfirmation{
+			TVID:        argString(raw, "tv_id"),
+			PackageID:   argString(raw, "package_id"),
+			Action:      argString(raw, "action"),
+			CurrentUser: &user,
+			Enabled:     &enabled,
+		},
+	}, nil
+}
 
 func (s *Server) callTool(r *http.Request, name string, a map[string]any) (any, error) {
 	if strings.HasPrefix(name, "adb_") || name == "install_apk" {
@@ -323,6 +368,18 @@ func (s *Server) callTool(r *http.Request, name string, a map[string]any) (any, 
 			return nil, errors.New("Unknown TV")
 		}
 		return s.adbLaunchables(r.Context(), id)
+	case "adb_clear_package", "adb_enable_package", "adb_disable_package", "adb_uninstall_package":
+		id := s.resolveTV(argString(a, "tv_id"))
+		if id == "" {
+			return nil, errors.New("Unknown TV")
+		}
+		action := strings.TrimPrefix(name, "adb_")
+		action = strings.TrimSuffix(action, "_package")
+		request, err := mcpADBPackageMutationRequest(a, action)
+		if err != nil {
+			return nil, err
+		}
+		return s.adbPackageMutation(r.Context(), id, action, request)
 	case "install_apk":
 		id := s.resolveTV(argString(a, "tv_id"))
 		if id == "" {
