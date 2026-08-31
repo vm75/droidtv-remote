@@ -25,7 +25,7 @@
 - Automatic connection and reconnection while clients are active, auto-disconnecting after 5 minutes of inactivity
 - Reverse-proxy subdomain and subpath support
 - MCP tools for every REST capability at `/mcp`
-- Minimal static container image with no runtime package dependencies
+- Compact multi-architecture container with a pinned optional ADB runtime
 
 ## Quick start
 
@@ -94,5 +94,6 @@ Environment variables:
 
 - `DROIDTV_ADB_ENABLED=true|false` — opt in; default is false.
 - `DROIDTV_ADB_PATH=/usr/bin/adb` — optional executable override.
+- `DROIDTV_ADB_ADMIN_TOKEN=<secret>` — required and non-empty whenever ADB is enabled; provide it only as an environment variable.
 
-When disabled, startup and all existing Remote v2 behavior remain independent of ADB.
+When disabled, startup and all existing Remote v2 behavior remain independent of ADB. When enabled, ADB administration is per-TV and requires `Authorization: Bearer <secret>` for every ADB REST endpoint and ADB MCP tool. Secure pairing codes are request-only and are not persisted. Forgetting an ADB association does not revoke the shared host key on the TV; use the TV debugging settings for remote revocation.
