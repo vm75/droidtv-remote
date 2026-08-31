@@ -4,7 +4,7 @@ This tracker is the implementation-order gate for the ADB integration series. It
 
 | Issue | Scope | Status | Evidence |
 |---|---|---|---|
-| #1 | Managed ADB runtime foundation | Pending | |
+| #1 | Managed ADB runtime foundation | Complete | CI run 11: `make test`, binary build/start, amd64 + arm64 container builds, packaged `adb version`; VERSION unchanged. |
 | #2 | Registry, authorization, pairing, connection APIs | Pending | |
 | #3 | PWA ADB setup and connection status | Pending | |
 | #4 | Device information and package/launcher inventory | Pending | |
