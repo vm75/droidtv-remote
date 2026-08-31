@@ -114,7 +114,7 @@ http://<server-ip>:7503/mcp
 
 It supports MCP initialization, ping, tool discovery, and tool calls. The core Remote v2/launcher tools remain available, and authenticated ADB administration adds read-only inventory tools in addition to connection controls:
 
-`status`, `list_tvs`, `add_tv`, `forget_tv`, `set_tv_apps`, `list_apps`, `add_app`, `update_app`, `reorder_apps`, `delete_app`, `connect_tv`, `submit_pairing_code`, `send_key`, `send_text`, `launch_app`, `next_event`, plus `adb_status`, `adb_pair`, `adb_connect`, `adb_disconnect`, `adb_forget`, `adb_device_info`, `adb_packages`, and `adb_launchables`.
+`status`, `list_tvs`, `add_tv`, `forget_tv`, `set_tv_apps`, `list_apps`, `add_app`, `update_app`, `reorder_apps`, `delete_app`, `connect_tv`, `submit_pairing_code`, `send_key`, `send_text`, `launch_app`, `next_event`, plus `adb_status`, `adb_pair`, `adb_connect`, `adb_disconnect`, `adb_forget`, `adb_device_info`, `adb_packages`, `adb_launchables`, and authenticated `install_apk`.
 
 Uploaded MCP icons use base64 plus a MIME type. `next_event` preserves TV-scoped long-poll behavior. See [MCP.md](MCP.md) for client configuration and request examples.
 
@@ -153,6 +153,8 @@ services:
       DROIDTV_ADB_ENABLED: "false"
       DROIDTV_ADB_PATH: /usr/bin/adb
       DROIDTV_ADB_ADMIN_TOKEN: ${DROIDTV_ADB_ADMIN_TOKEN:-}
+      DROIDTV_ADB_APK_MAX_BYTES: ${DROIDTV_ADB_APK_MAX_BYTES:-134217728}
+      DROIDTV_ADB_INSTALL_TIMEOUT: ${DROIDTV_ADB_INSTALL_TIMEOUT:-5m}
     volumes:
       - ./data:/app/data
 ```
@@ -214,6 +216,7 @@ Per-TV ADB association is independent from Android TV Remote v2. The authenticat
 - `GET /api/tvs/<tv-id>/adb/device`
 - `GET /api/tvs/<tv-id>/adb/packages`
 - `GET /api/tvs/<tv-id>/adb/launchables`
+- `POST /api/tvs/<tv-id>/adb/install-apk` with exactly one multipart file field named `apk`
 
 Inventory is on-demand and read-only. Device information exposes only manufacturer, model, product, Android release/API level, build identifier, supported ABIs, and current user. Package inventory reports deterministic bounded package IDs, system/third-party classification, enabled state when available, version code when available, and whether an exact package has a Leanback launcher component. The launcher inventory specifically queries `ACTION_MAIN` with `CATEGORY_LEANBACK_LAUNCHER`. Friendly localized labels, icons, banners, and APK resources are intentionally not discovered in this phase. Parser warnings make vendor-noisy, unsupported, or truncated results explicit.
 
@@ -225,4 +228,10 @@ The PWA exposes this as a separate **ADB administration** view (console icon in 
 
 The same ADB administration view has an on-demand **Discover apps** workflow. It shows Leanback TV-launchable packages first, with an explicit switch for inspecting all installed packages. Discovery is package-only: it does not download labels, icons, banners, or Play Store metadata. Existing shared launchers are matched only by exact package ID. Unknown TV-launchable packages can be selected, given a manually reviewed display name, previewed, then appended to the shared launcher library and enabled only for the selected TV. Refreshing or canceling discovery writes nothing, missing packages never delete/disable existing launchers, and user-defined launcher order is preserved with new imports appended.
 
-Forgetting a TV or its ADB association removes only the local per-TV association. Because all TVs use the shared managed ADB host identity, the server cannot selectively revoke that host key from one TV; revoke/forget it in the TV's debugging settings when required. Installation, package administration, and diagnostics are intentionally added only by later ADB phases.
+The backend also supports installing or updating **one APK at a time** on an explicitly selected ADB-connected TV. REST uploads are streamed to a generated mode-`0600` temporary file, SHA-256 is calculated while streaming, and the file is deleted after success or failure. The default REST limit is 128 MiB (`DROIDTV_ADB_APK_MAX_BYTES`) and the default install timeout is 5 minutes (`DROIDTV_ADB_INSTALL_TIMEOUT`). The operation is equivalent to `adb install -r`: it does not grant permissions automatically, permit downgrades, bypass SDK protections, or silently uninstall/reinstall after a signing mismatch. APK filenames, URLs, local paths, ADB options, package names, and shell fragments are never accepted as command input. The PWA upload UI is added separately in the next phase.
+
+MCP exposes the same operation as `install_apk`, but JSON-RPC transports the APK as base64 and therefore has a smaller 8 MiB decoded APK limit and a 16 MiB total MCP request limit. MCP payloads use the same temporary-file/install/cleanup path and the same bearer authorization. For larger APKs, use the REST multipart endpoint.
+
+APK staging uses the operating system temporary directory (normally `/tmp` in the container), not `/app/data`, and files are not retained as an APK repository. Ensure temporary storage has enough free space for the configured maximum upload. If the container uses a read-only root filesystem, provide a writable `/tmp` or tmpfs. Behind a reverse proxy, allow a body slightly larger than `DROIDTV_ADB_APK_MAX_BYTES`, keep request buffering disabled when practical, and set send/read timeouts longer than `DROIDTV_ADB_INSTALL_TIMEOUT`. The supplied nginx examples are sized for the documented defaults.
+
+Forgetting a TV or its ADB association removes only the local per-TV association. Because all TVs use the shared managed ADB host identity, the server cannot selectively revoke that host key from one TV; revoke/forget it in the TV's debugging settings when required. Package administration and diagnostics are intentionally added only by later ADB phases.
