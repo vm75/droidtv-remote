@@ -16,9 +16,11 @@ import (
 )
 
 const (
-	defaultADBTimeout   = 15 * time.Second
-	defaultADBMaxOutput = int64(256 * 1024)
-	adbServerSocket     = "tcp:127.0.0.1:5038"
+	defaultADBTimeout        = 15 * time.Second
+	defaultADBInstallTimeout = 5 * time.Minute
+	defaultADBMaxOutput      = int64(256 * 1024)
+	defaultADBAPKMaxBytes    = int64(128 * 1024 * 1024)
+	adbServerSocket          = "tcp:127.0.0.1:5038"
 )
 
 type ADBConfig struct {
