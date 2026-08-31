@@ -1788,6 +1788,7 @@ createApp({
             retryADB,
             disconnectADB,
             forgetADB,
+            clearADBDiscovery,
             discoverADBApps,
             setADBDiscoveryMode,
             toggleADBDiscoverySelection,
