@@ -5,7 +5,8 @@ COPY go.mod ./
 COPY server/ ./server/
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /droidtv-remote ./server
 
-FROM scratch
+FROM alpine:3.21.3
+RUN apk add --no-cache android-tools=35.0.2-r7
 WORKDIR /app
 COPY --from=build /droidtv-remote /app/droidtv-remote
 COPY VERSION /app/VERSION
