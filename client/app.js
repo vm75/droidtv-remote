@@ -1102,6 +1102,7 @@ createApp({
                 link.click();
                 document.body.removeChild(link);
                 factory.revokeObjectURL(url);
+                adbDiagnosticError.value = '';
                 adbDiagnosticMessage.value = kind === 'screenshot'
                     ? 'Screenshot downloaded from ' + tv.name + '.'
                     : 'Finite device log snapshot downloaded. Treat it as sensitive.';
