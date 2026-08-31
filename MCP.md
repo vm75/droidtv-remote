@@ -37,6 +37,9 @@ The endpoint is stateless. It accepts JSON-RPC requests over HTTP `POST`, MCP no
 | `adb_connect` | Connect ADB to an explicit per-TV endpoint |
 | `adb_disconnect` | Disconnect using the selected TV's stored ADB serial |
 | `adb_forget` | Forget only the selected TV's local ADB association |
+| `adb_device_info` | Read allowlisted device properties and current user |
+| `adb_packages` | Read bounded installed-package inventory for the current user |
+| `adb_launchables` | Read Leanback launcher components for the current user |
 
 ## Example initialization
 
@@ -72,7 +75,7 @@ The endpoint is stateless. It accepts JSON-RPC requests over HTTP `POST`, MCP no
 
 Tool results include both JSON text content and `structuredContent`. Operational errors are returned as MCP tool errors rather than HTTP errors.
 
-The five `adb_*` tools require the same administrator bearer token as the ADB REST API. Set `DROIDTV_ADB_ADMIN_TOKEN` only in the server environment, then send `Authorization: Bearer <token>` on the MCP HTTP request. Missing or wrong credentials return an MCP tool error with structured `error.code = "unauthorized"`. ADB status/results never include the token or secure pairing code.
+All `adb_*` tools require the same administrator bearer token as the ADB REST API. Set `DROIDTV_ADB_ADMIN_TOKEN` only in the server environment, then send `Authorization: Bearer <token>` on the MCP HTTP request. Missing or wrong credentials return an MCP tool error with structured `error.code = "unauthorized"`. ADB status/results never include the token or secure pairing code.
 
 ## Uploaded icons
 
