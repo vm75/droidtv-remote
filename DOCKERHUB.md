@@ -85,3 +85,14 @@ PWA entry files receive the released `VERSION` at serve time and are sent with n
 - [GHCR package](https://github.com/vm75/droidtv-remote/pkgs/container/droidtv-remote)
 - [Issue tracker](https://github.com/vm75/droidtv-remote/issues)
 - [License](https://github.com/vm75/droidtv-remote/blob/main/LICENSE)
+
+## Optional ADB runtime
+
+The image contains the Alpine 3.21 `android-tools` package pinned to ADB 35.0.2-r7 for both amd64 and arm64. ADB is disabled unless `DROIDTV_ADB_ENABLED=true` is set. The managed Android home is `/app/data/adb`; keep `/app/data` on persistent storage so the host debugging identity survives container recreation.
+
+Environment variables:
+
+- `DROIDTV_ADB_ENABLED=true|false` — opt in; default is false.
+- `DROIDTV_ADB_PATH=/usr/bin/adb` — optional executable override.
+
+When disabled, startup and all existing Remote v2 behavior remain independent of ADB.
