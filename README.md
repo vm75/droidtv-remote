@@ -112,9 +112,9 @@ The same process exposes a stateless MCP Streamable HTTP endpoint at:
 http://<server-ip>:7503/mcp
 ```
 
-It supports MCP initialization, ping, tool discovery, and tool calls. The 16 tools mirror every REST capability:
+It supports MCP initialization, ping, tool discovery, and tool calls. The core Remote v2/launcher tools remain available, and authenticated ADB administration adds five separate tools:
 
-`status`, `list_tvs`, `add_tv`, `forget_tv`, `set_tv_apps`, `list_apps`, `add_app`, `update_app`, `reorder_apps`, `delete_app`, `connect_tv`, `submit_pairing_code`, `send_key`, `send_text`, `launch_app`, and `next_event`.
+`status`, `list_tvs`, `add_tv`, `forget_tv`, `set_tv_apps`, `list_apps`, `add_app`, `update_app`, `reorder_apps`, `delete_app`, `connect_tv`, `submit_pairing_code`, `send_key`, `send_text`, `launch_app`, `next_event`, plus `adb_status`, `adb_pair`, `adb_connect`, `adb_disconnect`, and `adb_forget`.
 
 Uploaded MCP icons use base64 plus a MIME type. `next_event` preserves TV-scoped long-poll behavior. See [MCP.md](MCP.md) for client configuration and request examples.
 
@@ -149,12 +149,15 @@ services:
     network_mode: host
     restart: unless-stopped
     environment:
-      - SERVER_PORT=7503
+      SERVER_PORT: 7503
+      DROIDTV_ADB_ENABLED: "false"
+      DROIDTV_ADB_PATH: /usr/bin/adb
+      DROIDTV_ADB_ADMIN_TOKEN: ${DROIDTV_ADB_ADMIN_TOKEN:-}
     volumes:
       - ./data:/app/data
 ```
 
-The multi-stage `deploy/Containerfile` produces a minimal static image for `linux/amd64` and `linux/arm64`.
+The multi-stage `deploy/Containerfile` produces a compact Alpine runtime image for `linux/amd64` and `linux/arm64`, including the pinned ADB runtime.
 
 ## Reverse proxies
 
@@ -197,4 +200,20 @@ ADB support is opt-in and disabled by default. The normal Android TV Remote v2 s
 
 The container includes Alpine's `android-tools` package pinned to ADB 35.0.2-r7. Enable the managed runtime with `DROIDTV_ADB_ENABLED=true`; override the executable only when needed with `DROIDTV_ADB_PATH` (the container default is `/usr/bin/adb`). The server keeps the ADB host identity under `data/adb/.android/`, so the existing `/app/data` volume also persists the debugging host key and secure Wi-Fi known-host database.
 
-The application uses a dedicated local ADB server socket and only stops a daemon it started. ADB command execution is bounded, uses argument arrays rather than shell strings, and all device commands require an explicit target serial. Public pairing, connection, inventory, install, package-administration, and diagnostic APIs are added in the later ADB integration phases.
+The application uses a dedicated local ADB server socket and only stops a daemon it started. ADB command execution is bounded, uses argument arrays rather than shell strings, and device operations require an explicit stored target.
+
+When ADB is enabled, set a non-empty `DROIDTV_ADB_ADMIN_TOKEN` environment variable. The server refuses to initialize the ADB administrator runtime without it. Send that value only as `Authorization: Bearer <token>` to the ADB REST endpoints or ADB MCP tool calls; it is not stored in `config.yaml` or `tvs.yaml`.
+
+Per-TV ADB association is independent from Android TV Remote v2. The authenticated REST surface is:
+
+- `GET /api/tvs/<tv-id>/adb/status`
+- `POST /api/tvs/<tv-id>/adb/pair` with `{"endpoint":"host:port","code":"123456"}`
+- `POST /api/tvs/<tv-id>/adb/connect` with `{"endpoint":"host:port"}`
+- `POST /api/tvs/<tv-id>/adb/disconnect`
+- `POST /api/tvs/<tv-id>/adb/forget`
+
+All ADB responses are `Cache-Control: no-store`. Status reports Remote v2 and ADB separately and uses ADB states `disabled`, `unavailable`, `unpaired`, `pairing`, `connecting`, `unauthorized`, `connected`, or `offline`. Secure Wi-Fi pairing persists only the returned ADB association/GUID; the six-digit code is never persisted.
+
+For legacy TCP debugging, first enable network debugging on the TV and connect to an explicit `host:port`; the status surface reports `unauthorized` until the TV-side authorization prompt is accepted. For Android 11+ wireless debugging, use the TV's explicit pairing endpoint/code and then its explicit connect endpoint.
+
+Forgetting a TV or its ADB association removes only the local per-TV association. Because all TVs use the shared managed ADB host identity, the server cannot selectively revoke that host key from one TV; revoke/forget it in the TV's debugging settings when required. Inventory, installation, package administration, and diagnostics are intentionally added only by later ADB phases.
