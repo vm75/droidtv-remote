@@ -210,9 +210,9 @@ func writeADBError(w http.ResponseWriter, err error) {
 		switch adbErr.Code {
 		case "unauthorized":
 			status = http.StatusUnauthorized
-		case "invalid_endpoint", "invalid_pairing_code", "invalid_target", "invalid_upload", "invalid_apk", "invalid_package", "invalid_package_action":
+		case "invalid_endpoint", "invalid_pairing_code", "invalid_target", "invalid_upload", "invalid_apk", "invalid_package", "invalid_package_action", "invalid_reboot_confirmation":
 			status = http.StatusBadRequest
-		case "upload_too_large":
+		case "upload_too_large", "capture_too_large":
 			status = http.StatusRequestEntityTooLarge
 		case "disabled", "unavailable", "missing_admin_token":
 			status = http.StatusServiceUnavailable
@@ -220,13 +220,13 @@ func writeADBError(w http.ResponseWriter, err error) {
 			status = http.StatusNotImplemented
 		case "malformed_output":
 			status = http.StatusBadGateway
-		case "malformed_apk", "incompatible_abi", "incompatible_sdk":
+		case "malformed_apk", "incompatible_abi", "incompatible_sdk", "malformed_capture":
 			status = http.StatusUnprocessableEntity
 		case "insufficient_storage":
 			status = http.StatusInsufficientStorage
 		case "signature_mismatch", "version_downgrade", "package_manager_failure",
 			"package_not_found", "protected_package", "stale_package_state", "package_state_unavailable",
-			"package_mutation_failed", "partial_failure":
+			"package_mutation_failed", "partial_failure", "stale_reboot_confirmation":
 			status = http.StatusConflict
 		case "canceled":
 			status = http.StatusRequestTimeout
@@ -261,6 +261,9 @@ func (s *Server) setADBState(id, state string) {
 	st := s.state(id)
 	st.mu.Lock()
 	st.adbState = state
+	if state != "offline" {
+		st.adbOfflineChecks = 0
+	}
 	st.mu.Unlock()
 }
 
@@ -270,6 +273,13 @@ func (s *Server) transientADBState(id string) string {
 	defer st.mu.Unlock()
 	if st.adbState == "pairing" || st.adbState == "connecting" {
 		return st.adbState
+	}
+	if st.adbState == "offline" && st.adbOfflineChecks > 0 {
+		st.adbOfflineChecks--
+		return "offline"
+	}
+	if st.adbState == "offline" {
+		st.adbState = ""
 	}
 	return ""
 }
