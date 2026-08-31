@@ -16,7 +16,13 @@ const appSaveRequests = [];
 const appReorderRequests = [];
 const adbRequests = [];
 const adbUploadRequests = [];
+const packageAdminRequests = [];
 const confirmations = [];
+const disabledAdminPackages = new Set(['tv.stream.beta']);
+const uninstalledAdminPackages = new Set();
+let confirmResult = true;
+let holdPackageMutation = false;
+let resolvePackageMutation = null;
 let nextADBUploadResponse = null;
 let holdADBUpload = false;
 let pendingADBUpload = null;
@@ -120,7 +126,7 @@ global.window = {
     navigator: null,
     confirm: message => {
         confirmations.push(message);
-        return true;
+        return confirmResult;
     }
 };
 global.document = { cookie: '', hidden: false };
@@ -233,7 +239,7 @@ global.fetch = async (url, options = {}) => {
     if (url.startsWith('api/tvs/') && url.includes('/adb/')) {
         const parts = url.split('/');
         const tvId = decodeURIComponent(parts[2]);
-        const action = parts[4];
+        const action = parts.slice(4).join('/');
         const auth = options.headers && options.headers.Authorization || '';
         adbRequests.push({
             url,
@@ -253,6 +259,35 @@ global.fetch = async (url, options = {}) => {
                 remote: { connected: false, connecting: false, pairing_in_progress: false },
                 adb: { ...adbStates[tvId] }
             });
+        }
+        if (action.startsWith('packages/') && options.method === 'POST') {
+            const packageAction = action.split('/')[1];
+            const body = JSON.parse(options.body);
+            const apply = () => {
+                packageAdminRequests.push({ tvId, action: packageAction, body });
+                if (packageAction === 'disable') disabledAdminPackages.add(body.package_id);
+                if (packageAction === 'enable') disabledAdminPackages.delete(body.package_id);
+                if (packageAction === 'uninstall') uninstalledAdminPackages.add(body.package_id);
+                return response({
+                    tv_id: tvId,
+                    action: packageAction,
+                    package_id: body.package_id,
+                    current_user: 0,
+                    installed: packageAction !== 'uninstall',
+                    package: packageAction === 'uninstall' ? undefined : {
+                        package_id: body.package_id,
+                        classification: 'third_party',
+                        enabled: !disabledAdminPackages.has(body.package_id)
+                    },
+                    launcher_availability_changed: packageAction === 'disable' || packageAction === 'uninstall'
+                });
+            };
+            if (holdPackageMutation) {
+                return new Promise(resolve => {
+                    resolvePackageMutation = () => resolve(apply());
+                });
+            }
+            return apply();
         }
         if (action === 'packages') {
             if (failNextDiscovery) {
@@ -280,7 +315,7 @@ global.fetch = async (url, options = {}) => {
                             {
                                 package_id: 'tv.stream.alpha',
                                 classification: 'third_party',
-                                enabled: true,
+                                enabled: !disabledAdminPackages.has('tv.stream.alpha'),
                                 version_code: '12',
                                 tv_launchable: true,
                                 component: 'tv.stream.alpha/.TvActivity'
@@ -288,7 +323,7 @@ global.fetch = async (url, options = {}) => {
                             {
                                 package_id: 'tv.stream.beta',
                                 classification: 'third_party',
-                                enabled: false,
+                                enabled: !disabledAdminPackages.has('tv.stream.beta'),
                                 version_code: '7',
                                 tv_launchable: true,
                                 component: 'tv.stream.beta/.TvActivity'
@@ -296,12 +331,13 @@ global.fetch = async (url, options = {}) => {
                             {
                                 package_id: 'com.vendor.system',
                                 classification: 'system',
+                                protected: true,
                                 enabled: true,
                                 version_code: '55',
                                 tv_launchable: false,
                                 component: ''
                             }
-                        ],
+                        ].filter(pkg => !uninstalledAdminPackages.has(pkg.package_id)),
                         warnings: ['Ignored 1 malformed package-list lines.']
                     }
                 };
