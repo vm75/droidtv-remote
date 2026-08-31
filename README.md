@@ -84,6 +84,14 @@ Open the **apps** button in the remote header to manage the shared launcher libr
 
 Uploaded icons may be PNG, JPEG, WebP, or GIF and must be 2 MB or smaller. They are signature-checked and stored with generated names under `data/icons/`.
 
+## Guarded ADB package administration
+
+After authenticating the ADB administration view and running **Discover apps**, third-party packages can be cleared, enabled, disabled, or uninstalled for the TV's **current Android user**. These actions are intentionally not free-form: the PWA can only submit an exact package returned by discovery, and the server re-reads inventory immediately before every mutation.
+
+Every package action requires confirmation tied to the selected TV, package ID, action, current user, and observed enabled state. The server rejects stale confirmations, unknown/system packages, packages whose install path is not under `/data/app/`, and a small protected core denylist covering Android/Google TV launcher, settings, input, debugging, Play services/framework, and package-installer components. Uninstall uses `pm uninstall --user <current-user>` only; global/system uninstall is not exposed.
+
+**Clear data** permanently removes that app's local data/settings for the current user and may require signing in again. **Uninstall** removes only the current user's installation. Disable/uninstall remove matching launcher availability only from the selected TV after verified success; the shared launcher record and every other TV remain unchanged.
+
 ## Runtime data and configuration
 
 The mounted `data/` directory remains fully compatible:
