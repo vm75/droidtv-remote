@@ -5,6 +5,9 @@ services:
     restart: unless-stopped
     # Host networking lets the server reach TVs on the LAN.
     network_mode: host
+    environment:
+      DROIDTV_ADB_ENABLED: "false"
+      DROIDTV_ADB_PATH: /usr/bin/adb
     volumes:
       - ./data:/app/data
     environment:
