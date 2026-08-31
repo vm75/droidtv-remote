@@ -9,9 +9,8 @@ services:
     # Host networking lets the server reach TVs on the LAN.
     network_mode: host
     environment:
+      SERVER_PORT: ${SERVER_PORT:-7503}
       DROIDTV_ADB_ENABLED: "false"
       DROIDTV_ADB_PATH: /usr/bin/adb
     volumes:
       - ${DATA_DIR:-./dev/data}:/app/data
-    environment:
-      - SERVER_PORT=${SERVER_PORT:-7503}
