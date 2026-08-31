@@ -387,8 +387,8 @@ mountedCallbacks[0]();
     await intervalCallbacks[0]();
     await flushPromises();
     assert.equal(connectRequests.length, requestCountBeforeRestart + 1);
-    assert.deepEqual(connectRequests.at(-1), { tv_id: 'living' });
-    console.log('PWA selection, launcher management, and automatic connection tests passed');
+    assert.deepEqual(connectRequests.at(-1), { tv_id: 'bedroom' });
+    console.log('PWA selection, launcher management, ADB administration, and automatic connection tests passed');
 })().catch(error => {
     console.error(error);
     process.exitCode = 1;
