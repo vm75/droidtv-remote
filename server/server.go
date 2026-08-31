@@ -39,6 +39,7 @@ type TVState struct {
 	pairCode           chan string
 	lastClientActivity time.Time
 	activeClients      int
+	adbState           string
 }
 
 type Event struct {
@@ -77,11 +78,13 @@ type Server struct {
 	eventTimeout      time.Duration
 	inactivityTimeout time.Duration
 	adb               *ADBManager
+	adbAdminToken     string
 }
 
 func NewServer(root, version string) (*Server, error) {
 	s := &Server{root: root, version: version, apps: map[string]*App{}, tvs: map[string]*TV{}, states: map[string]*TVState{}, events: map[string]*eventBucket{}, eventTimeout: 30 * time.Second, inactivityTimeout: 5 * time.Minute}
 	s.adb = NewADBManager(root, nil)
+	s.adbAdminToken = strings.TrimSpace(os.Getenv("DROIDTV_ADB_ADMIN_TOKEN"))
 	s.config = loadConfig(filepath.Join(root, "data", "config.yaml"))
 	if err := s.loadApps(); err != nil {
 		return nil, err
@@ -149,6 +152,9 @@ func (s *Server) loadTVs() error {
 		id, _ := row["id"].(string)
 		name, _ := row["name"].(string)
 		host, _ := row["host"].(string)
+		adbSerial, _ := row["adb_serial"].(string)
+		adbEndpoint, _ := row["adb_endpoint"].(string)
+		adbPairGUID, _ := row["adb_pair_guid"].(string)
 		if !validID(id) || name == "" || host == "" {
 			continue
 		}
@@ -170,7 +176,7 @@ func (s *Server) loadTVs() error {
 		if len(clean) != len(ids) {
 			changed = true
 		}
-		s.tvs[id] = &TV{ID: id, Name: name, Host: host, AppIDs: clean}
+		s.tvs[id] = &TV{ID: id, Name: name, Host: host, AppIDs: clean, ADBSerial: adbSerial, ADBEndpoint: adbEndpoint, ADBPairGUID: adbPairGUID}
 		s.tvOrder = append(s.tvOrder, id)
 	}
 	if !exists && strings.TrimSpace(s.config.TVIP) != "" {
@@ -657,6 +663,11 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/send_text", s.handleSendText)
 	m.HandleFunc("POST /api/launch_app", s.handleLaunchApp)
 	m.HandleFunc("GET /api/events", s.handleEvents)
+	m.HandleFunc("GET /api/tvs/{tv_id}/adb/status", s.handleADBStatus)
+	m.HandleFunc("POST /api/tvs/{tv_id}/adb/pair", s.handleADBPair)
+	m.HandleFunc("POST /api/tvs/{tv_id}/adb/connect", s.handleADBConnect)
+	m.HandleFunc("POST /api/tvs/{tv_id}/adb/disconnect", s.handleADBDisconnect)
+	m.HandleFunc("POST /api/tvs/{tv_id}/adb/forget", s.handleADBForget)
 	m.Handle("/mcp", s.mcpHandler())
 	m.Handle("/mcp/", s.mcpHandler())
 	m.HandleFunc("/", s.handleStatic)
