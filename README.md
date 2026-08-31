@@ -92,6 +92,16 @@ Every package action requires confirmation tied to the selected TV, package ID, 
 
 **Clear data** permanently removes that app's local data/settings for the current user and may require signing in again. **Uninstall** removes only the current user's installation. Disable/uninstall remove matching launcher availability only from the selected TV after verified success; the shared launcher record and every other TV remain unchanged.
 
+## Bounded ADB diagnostics and reboot
+
+The authenticated ADB administration view provides three one-shot operations for the selected **connected** TV:
+
+- **Screenshot** runs only `adb -s <serial> exec-out screencap -p`, validates a complete PNG, caps raw output at 8 MiB, and returns an authenticated `image/png` download. The capture is held only in bounded process memory and is not retained.
+- **Download logs** runs only a finite `logcat -d -t 2000 -v threadtime` snapshot with a 10-second command deadline and 512 KiB response cap. The server redacts the configured admin token, obvious Bearer credentials, and obvious six-digit pairing-code patterns. Android logs can still contain sensitive application, account, network, or content information, so review them before sharing.
+- **Reboot TV** sends only a normal `adb -s <serial> reboot` after confirmation tied to the selected TV ID, display name, and current connected ADB state. The response means only that the reboot command was sent; the expected disconnect and later boot completion are not claimed as completed operations.
+
+Diagnostic/reboot audit lines contain only action type, TV ID, UTC timestamp/result, and safe size/SHA-256 metadata when applicable. Screenshot/log contents are never written to normal server logs or persisted by default. Screen recording, continuous logs, bugreports, recovery/bootloader reboot, factory reset, file transfer, and arbitrary ADB commands are intentionally not exposed.
+
 ## Runtime data and configuration
 
 The mounted `data/` directory remains fully compatible:
