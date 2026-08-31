@@ -20,8 +20,8 @@ func newPackageAdminRunner() *packageAdminRunner {
 	return &packageAdminRunner{
 		packages: map[string]map[string]bool{
 			"living:5555": {
-				"tv.stream.alpha":            true,
-				"tv.vendor.priv":             true,
+				"tv.stream.alpha":               true,
+				"tv.vendor.priv":                true,
 				"com.google.android.tvlauncher": true,
 			},
 			"bedroom:5555": {
