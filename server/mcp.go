@@ -100,9 +100,9 @@ func mcpTools() []mcpTool {
 		{"adb_reboot", "Send a normal reboot command after exact TV/name/connected-state confirmation.", obj(map[string]any{
 			"tv_id": str("TV ID"),
 			"confirmation": obj(map[string]any{
-				"tv_id": str("TV ID exactly as confirmed"),
+				"tv_id":   str("TV ID exactly as confirmed"),
 				"tv_name": str("TV display name exactly as confirmed"),
-				"state": map[string]any{"type": "string", "const": "connected"},
+				"state":   map[string]any{"type": "string", "const": "connected"},
 			}, "tv_id", "tv_name", "state"),
 		}, "tv_id", "confirmation")},
 		{"install_apk", "Install or update one APK on the selected ADB-connected TV. MCP uses base64 and an 8 MiB decoded limit.", obj(map[string]any{"tv_id": str("TV ID"), "filename": str("APK filename ending in .apk"), "apk_base64": str("Base64-encoded APK; decoded payload must be 8 MiB or smaller")}, "tv_id", "filename", "apk_base64")},
@@ -421,8 +421,8 @@ func (s *Server) callTool(r *http.Request, name string, a map[string]any) (any, 
 		}
 		return mcpRichToolResult{
 			Content: []any{map[string]any{
-				"type": "image",
-				"data": base64.StdEncoding.EncodeToString(capture.Data),
+				"type":     "image",
+				"data":     base64.StdEncoding.EncodeToString(capture.Data),
 				"mimeType": "image/png",
 			}},
 			StructuredContent: map[string]any{"tv_id": id, "size_bytes": capture.Size, "sha256": capture.SHA256},
