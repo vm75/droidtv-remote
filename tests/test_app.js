@@ -760,12 +760,13 @@ mountedCallbacks[0]();
     assert.equal(exposed.adbDiscoveryVisiblePackages.value.length, 4);
     exposed.setADBDiscoveryMode('launchable');
 
-    exposed.toggleADBDiscoverySelection(alpha);
-    alpha.import_name = '   ';
+    const alphaForImportReview = exposed.adbDiscoveryPackages.value.find(item => item.package_id === 'tv.stream.alpha');
+    exposed.toggleADBDiscoverySelection(alphaForImportReview);
+    alphaForImportReview.import_name = '   ';
     exposed.reviewADBImport();
     assert.match(exposed.adbDiscoveryError.value, /display name/i);
     assert.equal(exposed.adbDiscoveryPreview.value, false);
-    alpha.import_name = 'Alpha TV';
+    alphaForImportReview.import_name = 'Alpha TV';
     exposed.reviewADBImport();
     assert.equal(exposed.adbDiscoveryPreview.value, true);
     exposed.cancelADBImportReview();
