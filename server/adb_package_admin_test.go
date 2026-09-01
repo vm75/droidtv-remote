@@ -285,8 +285,8 @@ func TestADBPackageAdministrationRESTMCPParityAndMultiTVIsolation(t *testing.T) 
 	}
 
 	result := mcpADBCall(t, s, "adb_clear_package", map[string]any{
-		"tv_id":       living,
-		"package_id":  "tv.stream.alpha",
+		"tv_id":      living,
+		"package_id": "tv.stream.alpha",
 		"confirmation": map[string]any{
 			"tv_id": living, "package_id": "tv.stream.alpha", "action": "clear", "current_user": 0, "enabled": true,
 		},
