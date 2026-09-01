@@ -17,9 +17,9 @@ import (
 
 const (
 	maxADBScreenshotBytes = int64(8 * 1024 * 1024)
-	maxADBLogBytes         = int64(512 * 1024)
-	maxADBLogLines         = 2000
-	adbDiagnosticTimeout   = 10 * time.Second
+	maxADBLogBytes        = int64(512 * 1024)
+	maxADBLogLines        = 2000
+	adbDiagnosticTimeout  = 10 * time.Second
 )
 
 var (
